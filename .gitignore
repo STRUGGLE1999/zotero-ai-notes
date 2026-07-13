@@ -1,0 +1,13 @@
+node_modules/
+.DS_Store
+*.log
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+dist/
+build/
+*.xpi
+*.zip
+.env
+.env.local
