@@ -9,7 +9,7 @@
     "zotero": {
       "id": "zotero-ai-notes@example.com",
       "strict_min_version": "9.0",
-      "strict_max_version": "9.999"
+      "strict_max_version": "9.0.*"
     }
   },
   "default_locale": "en-US"
