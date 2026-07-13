@@ -25,8 +25,8 @@ export default class ContextMenu {
 
     const menuItem = doc.createXULElement('menuitem');
     menuItem.setAttribute('id', 'zotero-ai-notes-context-menu');
-    menuItem.setAttribute('label', Zotero.getString('zotero-ai-notes.contextMenu.label'));
-    menuItem.setAttribute('tooltiptext', Zotero.getString('zotero-ai-notes.contextMenu.tooltip'));
+    menuItem.setAttribute('label', 'AI 整理批注');
+    menuItem.setAttribute('tooltiptext', '使用 AI 整理批注');
 
     menuItem.addEventListener('command', () => this.onMenuItemClick(win));
 

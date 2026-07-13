@@ -78,15 +78,19 @@ async function verifyXPI() {
   const rootFiles = filesInZip.filter(f => !f.path.includes('/'));
   const hasManifest = rootFiles.some(f => f.path === 'manifest.json');
   const hasBootstrap = rootFiles.some(f => f.path === 'bootstrap.js');
+  const hasLocalesDir = filesInZip.some(f => f.path.startsWith('_locales/'));
   
   console.log(`   manifest.json in root: ${hasManifest ? '✓' : '✗'}`);
   console.log(`   bootstrap.js in root:  ${hasBootstrap ? '✓' : '✗'}`);
+  console.log(`   _locales directory:    ${hasLocalesDir ? '✓' : '✗'}`);
   
   if (!hasManifest) {
     console.error('   Error: manifest.json not found in XPI root');
+    process.exit(1);
   }
   if (!hasBootstrap) {
     console.error('   Error: bootstrap.js not found in XPI root');
+    process.exit(1);
   }
   
   console.log('\n3. XPI Directory Tree');
@@ -112,20 +116,84 @@ async function verifyXPI() {
   
   const manifestPath = path.join(tempExtractDir, 'manifest.json');
   if (fs.existsSync(manifestPath)) {
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    console.log('\n4. manifest.json Content');
+    console.log('\n4. manifest.json Validation');
+    console.log('----------------------------');
+    
+    let manifest;
+    try {
+      manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      console.log('   JSON parse: ✓');
+    } catch (error) {
+      console.error('   JSON parse: ✗ - Invalid JSON');
+      process.exit(1);
+    }
+    
+    console.log('   Plugin ID: ', manifest.applications?.zotero?.id || '✗ Missing');
+    
+    const hasDefaultLocale = 'default_locale' in manifest;
+    console.log('   default_locale present:', hasDefaultLocale ? 'Yes' : 'No');
+    
+    if (hasDefaultLocale) {
+      const locale = manifest.default_locale;
+      const messagesPath = path.join(tempExtractDir, '_locales', locale.replace('-', '_'), 'messages.json');
+      const hasMessagesJson = fs.existsSync(messagesPath);
+      console.log(`   _locales/${locale.replace('-', '_')}/messages.json: ${hasMessagesJson ? '✓' : '✗'}`);
+      
+      if (!hasMessagesJson) {
+        console.error(`   Error: default_locale is set to "${locale}" but _locales/${locale.replace('-', '_')}/messages.json is missing`);
+        process.exit(1);
+      }
+    } else if (hasLocalesDir) {
+      console.error('   Error: _locales directory exists but default_locale is not set in manifest');
+      process.exit(1);
+    }
+    
+    console.log('\n5. manifest.json Content');
     console.log('------------------------');
     console.log(JSON.stringify(manifest, null, 2));
     
-    console.log('\n5. Compatibility Check');
+    console.log('\n6. Bootstrap.js Exports Check');
+    console.log('------------------------------');
+    const bootstrapPath = path.join(tempExtractDir, 'bootstrap.js');
+    if (fs.existsSync(bootstrapPath)) {
+      const bootstrapCode = fs.readFileSync(bootstrapPath, 'utf8');
+      const exports = ['startup', 'shutdown', 'install', 'uninstall'];
+      let allExportsFound = true;
+      
+      for (const exp of exports) {
+        const found = bootstrapCode.includes(`var ${exp} =`) || 
+                      bootstrapCode.includes(`function ${exp}`) ||
+                      bootstrapCode.includes(`const ${exp}`) ||
+                      bootstrapCode.includes(`let ${exp}`);
+        console.log(`   ${exp}: ${found ? '✓' : '✗'}`);
+        if (!found) allExportsFound = false;
+      }
+      
+      if (!allExportsFound) {
+        console.error('   Error: Missing required bootstrap exports');
+        process.exit(1);
+      }
+    } else {
+      console.error('   Error: bootstrap.js not found');
+      process.exit(1);
+    }
+    
+    console.log('\n7. Compatibility Check');
     console.log('----------------------');
     const minVersion = manifest.applications?.zotero?.strict_min_version;
     const maxVersion = manifest.applications?.zotero?.strict_max_version;
+    const pluginId = manifest.applications?.zotero?.id;
     const targetVersion = '9.0.6';
     
     console.log(`   Target Zotero Version: ${targetVersion}`);
-    console.log(`   strict_min_version:    ${minVersion}`);
-    console.log(`   strict_max_version:    ${maxVersion}`);
+    console.log(`   strict_min_version:    ${minVersion || '✗ Missing'}`);
+    console.log(`   strict_max_version:    ${maxVersion || '✗ Missing'}`);
+    console.log(`   Plugin ID:             ${pluginId || '✗ Missing'}`);
+    
+    if (!minVersion || !maxVersion || !pluginId) {
+      console.error('   Error: Missing required manifest fields');
+      process.exit(1);
+    }
     
     const matchesMin = compareVersions(targetVersion, minVersion) >= 0;
     const matchesMax = maxVersion.includes('*') 

@@ -10,9 +10,21 @@ const srcDir = path.join(rootDir, 'src');
 const addonDir = path.join(rootDir, 'addon');
 const buildDir = path.join(rootDir, 'build');
 
-function ensureDir(dir) {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+function cleanBuild() {
+  if (fs.existsSync(buildDir)) {
+    fs.rmSync(buildDir, { recursive: true, force: true });
+  }
+  fs.mkdirSync(buildDir, { recursive: true });
+}
+
+function cleanOldXPI() {
+  const xpiPath = path.join(rootDir, 'zotero-ai-notes-0.1.0.xpi');
+  if (fs.existsSync(xpiPath)) {
+    fs.unlinkSync(xpiPath);
+  }
+  const devXpiPath = path.join(rootDir, 'zotero-ai-notes-dev.xpi');
+  if (fs.existsSync(devXpiPath)) {
+    fs.unlinkSync(devXpiPath);
   }
 }
 
@@ -26,15 +38,12 @@ function copyFiles() {
   for (const file of filesToCopy) {
     const srcPath = path.join(addonDir, file);
     const destPath = path.join(buildDir, file);
-    ensureDir(path.dirname(destPath));
+    const destDir = path.dirname(destPath);
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
     fs.copyFileSync(srcPath, destPath);
   }
-}
-
-function createBootstrapWrapper(bundleCode) {
-  return `(function() {
-    ${bundleCode}
-  })();`;
 }
 
 async function createXPI() {
@@ -63,7 +72,8 @@ async function createXPI() {
 }
 
 async function buildOnce() {
-  ensureDir(buildDir);
+  cleanOldXPI();
+  cleanBuild();
   copyFiles();
 
   await esbuild.build({
@@ -73,23 +83,29 @@ async function buildOnce() {
     sourcemap: isDev,
     target: 'ES2020',
     outfile: path.join(buildDir, 'bootstrap.js'),
-    platform: 'node',
+    platform: 'neutral',
+    format: 'iife',
+    globalName: 'ZoteroAINotes',
     external: ['zotero-types'],
     define: {
       'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production')
+    },
+    footer: {
+      js: `
+var startup = ZoteroAINotes.startup;
+var shutdown = ZoteroAINotes.shutdown;
+var install = ZoteroAINotes.install;
+var uninstall = ZoteroAINotes.uninstall;
+`
     }
   });
-
-  const bootstrapPath = path.join(buildDir, 'bootstrap.js');
-  let code = fs.readFileSync(bootstrapPath, 'utf-8');
-  code = createBootstrapWrapper(code);
-  fs.writeFileSync(bootstrapPath, code);
 
   await createXPI();
 }
 
 async function buildWatch() {
-  ensureDir(buildDir);
+  cleanOldXPI();
+  cleanBuild();
   copyFiles();
 
   const context = await esbuild.context({
@@ -99,20 +115,24 @@ async function buildWatch() {
     sourcemap: isDev,
     target: 'ES2020',
     outfile: path.join(buildDir, 'bootstrap.js'),
-    platform: 'node',
+    platform: 'neutral',
+    format: 'iife',
+    globalName: 'ZoteroAINotes',
     external: ['zotero-types'],
     define: {
       'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production')
+    },
+    footer: {
+      js: `
+var startup = ZoteroAINotes.startup;
+var shutdown = ZoteroAINotes.shutdown;
+var install = ZoteroAINotes.install;
+var uninstall = ZoteroAINotes.uninstall;
+`
     }
   });
 
   await context.watch();
-
-  const bootstrapPath = path.join(buildDir, 'bootstrap.js');
-  let code = fs.readFileSync(bootstrapPath, 'utf-8');
-  code = createBootstrapWrapper(code);
-  fs.writeFileSync(bootstrapPath, code);
-
   await createXPI();
 
   console.log('Watching for changes...');
