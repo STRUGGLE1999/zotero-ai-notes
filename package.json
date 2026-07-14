@@ -1,0 +1,42 @@
+{
+  "name": "zotero-ai-notes",
+  "version": "0.3.0",
+  "description": "根据用户在 Zotero PDF 阅读过程中的高亮和批注，结合文献原文，自动整理为可靠、自然的 Markdown 笔记和思维导图",
+  "main": "addon/bootstrap.js",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "build-dev": "node scripts/build.js --dev",
+    "watch": "node scripts/build.js --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "test": "vitest run",
+    "test:watch": "vitest watch"
+  },
+  "keywords": [
+    "zotero",
+    "plugin",
+    "AI",
+    "notes",
+    "markdown"
+  ],
+  "author": "zotero-ai-notes contributors",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "esbuild": "^0.23.0",
+    "eslint": "^9.0.0",
+    "jszip": "^3.10.1",
+    "mermaid": "^11.15.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0",
+    "zotero-types": "^1.0.0"
+  },
+  "config": {
+    "addonName": "Zotero AI Notes",
+    "addonID": "zotero-ai-notes@example.com",
+    "addonRef": "zotero-ai-notes",
+    "addonInstance": "ZoteroAINotes"
+  }
+}

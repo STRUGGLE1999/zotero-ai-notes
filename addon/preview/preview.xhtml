@@ -1,0 +1,89 @@
+<?xml version="1.0"?>
+<?xml-stylesheet href="preview.css" type="text/css"?>
+<window id="zotero-ai-notes-preview-window"
+        title="Zotero AI Notes"
+        width="1280"
+        height="780"
+        orient="vertical"
+        style="display: flex;"
+        xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml">
+  <script src="preview.js"/>
+
+  <html:iframe id="mindmap-render-frame"
+               class="mindmap-render-frame"
+               src="render-frame.xhtml"
+               title="Mermaid renderer"
+               aria-hidden="true"
+               tabindex="-1"></html:iframe>
+  <html:main class="app-shell">
+    <html:header class="app-header">
+      <html:div>
+        <html:h1>AI 整理批注</html:h1>
+        <html:p id="document-summary">正在准备文献数据…</html:p>
+      </html:div>
+      <html:div id="global-status" class="status neutral">准备中</html:div>
+    </html:header>
+
+    <html:div class="workspace">
+      <html:section class="panel settings-panel">
+        <html:h2>1. 关注重点</html:h2>
+        <html:p class="hint">取消不需要的主题，或调整优先级后再生成。</html:p>
+        <html:div id="focus-loading" class="loading">正在根据批注识别关注重点…</html:div>
+        <html:div id="focus-list" class="focus-list"></html:div>
+
+        <html:label for="extra-requirement">本次补充要求</html:label>
+        <html:textarea id="extra-requirement" rows="5"
+                       placeholder="例如：重点解释方法设计，不要扩展批注之外的产品结论。"></html:textarea>
+
+        <html:button id="generate-button" class="primary" disabled="disabled">生成笔记</html:button>
+        <html:div id="focus-warnings" class="message-list"></html:div>
+      </html:section>
+
+      <html:section class="panel editor-panel">
+        <html:div class="panel-title-row">
+          <html:h2>2. Markdown 编辑</html:h2>
+          <html:button id="validate-button" disabled="disabled">校验当前内容</html:button>
+        </html:div>
+        <html:textarea id="markdown-editor" spellcheck="false"
+                       placeholder="确认关注重点并生成后，Markdown 会显示在这里。"></html:textarea>
+      </html:section>
+
+      <html:section class="panel preview-panel">
+        <html:div class="panel-title-row">
+          <html:h2>3. 结果预览</html:h2>
+          <html:div class="preview-tabs">
+            <html:button id="note-tab" class="preview-tab active">笔记</html:button>
+            <html:button id="mindmap-tab" class="preview-tab" disabled="disabled">思维导图</html:button>
+          </html:div>
+        </html:div>
+        <html:div id="validation-summary" class="validation neutral">尚未生成</html:div>
+        <html:div id="note-preview-panel">
+          <html:article id="rendered-preview" class="markdown-body">
+            <html:p class="placeholder">正式笔记不会显示内部 Evidence ID。</html:p>
+          </html:article>
+        </html:div>
+        <html:div id="mindmap-preview-panel" hidden="hidden">
+          <html:div class="mindmap-toolbar">
+            <html:span id="mindmap-summary" class="hint">笔记校验通过后生成 Mermaid 思维导图。</html:span>
+            <html:button id="copy-mindmap-button" disabled="disabled">复制 Mermaid 源码</html:button>
+          </html:div>
+          <html:div id="mindmap-svg" class="mindmap-svg"></html:div>
+          <html:div id="mindmap-tree" class="mindmap-tree" hidden="hidden"></html:div>
+          <html:label for="mindmap-source">Mermaid 源码</html:label>
+          <html:textarea id="mindmap-source" readonly="readonly" spellcheck="false"></html:textarea>
+        </html:div>
+      </html:section>
+    </html:div>
+
+    <html:footer class="app-footer">
+      <html:div id="action-message" class="action-message"></html:div>
+      <html:div class="footer-actions">
+        <html:button id="cancel-button">取消</html:button>
+        <html:button id="export-mindmap-button" disabled="disabled">导出思维导图</html:button>
+        <html:button id="export-button" disabled="disabled">导出 Markdown</html:button>
+        <html:button id="save-button" class="primary" disabled="disabled">写回 Zotero</html:button>
+      </html:div>
+    </html:footer>
+  </html:main>
+</window>
