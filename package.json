@@ -1,6 +1,6 @@
 {
   "name": "zotero-ai-notes",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "根据用户在 Zotero PDF 阅读过程中的高亮和批注，结合文献原文，自动整理为可靠、自然的 Markdown 笔记和思维导图",
   "main": "addon/bootstrap.js",
   "scripts": {
@@ -28,6 +28,7 @@
     "esbuild": "^0.23.0",
     "eslint": "^9.0.0",
     "jszip": "^3.10.1",
+    "mermaid": "^11.15.0",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0",
     "zotero-types": "^1.0.0"

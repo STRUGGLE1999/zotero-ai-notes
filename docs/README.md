@@ -11,6 +11,16 @@
 | 03 | [技术设计文档](technical/03_Zotero_AI插件_技术设计文档_Zotero9版.md) | technical/ | 描述技术栈、API 设计、数据结构和实现方案 |
 | 04 | [Prompt 设计文档](prompts/04_Zotero_AI插件_Prompt设计文档_Zotero9版.md) | prompts/ | 定义大模型提示词策略、输出格式和防幻觉约束 |
 
+## 开发进度
+
+- [2026-07-14：完整开发历程与技术复盘](progress/2026-07-14-development-retrospective.md)
+- [2026-07-14：第一阶段插件空壳完成](progress/2026-07-14-plugin-shell-complete.md)
+- [2026-07-14：第二阶段文献与批注数据读取完成](progress/2026-07-14-annotation-data-complete.md)
+- [2026-07-14：第三阶段 PDF 上下文与 Evidence 完成](progress/2026-07-14-pdf-context-evidence-complete.md)
+- [2026-07-14：第四阶段 Gemini 与 Markdown 完成](progress/2026-07-14-gemini-markdown-complete.md)
+- [2026-07-14：第五阶段完整闭环完成](progress/2026-07-14-full-loop-complete.md)
+- [2026-07-14：第六阶段 Mermaid 思维导图完成](progress/2026-07-14-mermaid-mindmap-complete.md)
+
 ## 目录结构
 
 ```
@@ -19,7 +29,8 @@ docs/
 ├── requirements/          # 产品需求文档
 ├── architecture/          # 架构设计文档
 ├── technical/             # 技术实现文档
-└── prompts/               # 大模型提示词文档
+├── prompts/               # 大模型提示词文档
+└── progress/              # 分阶段开发与验收记录
 ```
 
 ## 文档规范

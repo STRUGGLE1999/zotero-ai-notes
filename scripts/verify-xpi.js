@@ -41,7 +41,8 @@ function listDirectoryTree(dir, prefix = '') {
 }
 
 async function verifyXPI() {
-  const xpiPath = path.join(rootDir, 'zotero-ai-notes-0.1.0.xpi');
+  const packageVersion = require(path.join(rootDir, 'package.json')).version;
+  const xpiPath = path.join(rootDir, `zotero-ai-notes-${packageVersion}.xpi`);
   
   if (!fs.existsSync(xpiPath)) {
     console.error('Error: XPI file not found:', xpiPath);
@@ -183,15 +184,24 @@ async function verifyXPI() {
     const minVersion = manifest.applications?.zotero?.strict_min_version;
     const maxVersion = manifest.applications?.zotero?.strict_max_version;
     const pluginId = manifest.applications?.zotero?.id;
+    const updateUrl = manifest.applications?.zotero?.update_url;
     const targetVersion = '9.0.6';
     
     console.log(`   Target Zotero Version: ${targetVersion}`);
     console.log(`   strict_min_version:    ${minVersion || '✗ Missing'}`);
     console.log(`   strict_max_version:    ${maxVersion || '✗ Missing'}`);
     console.log(`   Plugin ID:             ${pluginId || '✗ Missing'}`);
+    console.log(`   Update URL:            ${updateUrl || '✗ Missing'}`);
     
-    if (!minVersion || !maxVersion || !pluginId) {
+    if (!minVersion || !maxVersion || !pluginId || !updateUrl) {
       console.error('   Error: Missing required manifest fields');
+      process.exit(1);
+    }
+
+    try {
+      new URL(updateUrl);
+    } catch (_error) {
+      console.error('   Error: Invalid update_url');
       process.exit(1);
     }
     

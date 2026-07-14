@@ -1,14 +1,22 @@
-import { getSelectedItem } from './selected-item';
-import { showTestDialog } from '../ui/test-dialog';
+import { collectSelectedDocumentData } from './annotation-reader';
+import { buildEvidenceData } from '../evidence/evidence-builder';
+import { writeEvidenceDebugJson } from '../utils/debug-json';
+import type { SettingsService } from '../config/settings';
+import { openPreviewWindow, PreviewController } from '../ui/preview-controller';
 
 declare const Zotero: any;
 
 export default class ContextMenu {
   private rootURI: string;
   private menuItems: Map<any, any> = new Map();
+  private settings: SettingsService;
+  private pluginVersion: string;
+  private previewWindows = new Set<any>();
 
-  constructor(rootURI: string) {
+  constructor(rootURI: string, settings: SettingsService, pluginVersion: string) {
     this.rootURI = rootURI;
+    this.settings = settings;
+    this.pluginVersion = pluginVersion;
   }
 
   register(win: any) {
@@ -17,18 +25,20 @@ export default class ContextMenu {
       return;
     }
 
-    const menupopup = doc.getElementById('zotero-item-pane-context-menu');
+    const menupopup = doc.getElementById('zotero-itemmenu');
     if (!menupopup) {
-      Zotero.debug('Zotero AI Notes: zotero-item-pane-context-menu not found', 2);
+      Zotero.debug('Zotero AI Notes: zotero-itemmenu not found', 2);
       return;
     }
 
     const menuItem = doc.createXULElement('menuitem');
     menuItem.setAttribute('id', 'zotero-ai-notes-context-menu');
     menuItem.setAttribute('label', 'AI 整理批注');
-    menuItem.setAttribute('tooltiptext', '使用 AI 整理批注');
+    menuItem.setAttribute('title', '使用 AI 整理批注');
 
-    menuItem.addEventListener('command', () => this.onMenuItemClick(win));
+    menuItem.addEventListener('command', () => {
+      void this.onMenuItemClick(win);
+    });
 
     const separator = doc.createXULElement('menuseparator');
     separator.setAttribute('id', 'zotero-ai-notes-context-menu-separator');
@@ -68,6 +78,14 @@ export default class ContextMenu {
   }
 
   destroy() {
+    for (const previewWindow of this.previewWindows) {
+      try {
+        previewWindow.close();
+      } catch {
+        // The user may already have closed the window.
+      }
+    }
+    this.previewWindows.clear();
     const windows = [...this.menuItems.keys()];
     for (const win of windows) {
       this.unregister(win);
@@ -75,13 +93,27 @@ export default class ContextMenu {
     this.menuItems.clear();
   }
 
-  private onMenuItemClick(win: any) {
+  private async onMenuItemClick(win: any) {
     try {
-      const result = getSelectedItem();
-      showTestDialog(win, result);
+      const data = await collectSelectedDocumentData();
+      const evidenceData = await buildEvidenceData(data);
+      await writeEvidenceDebugJson(evidenceData);
+      const config = await this.settings.getProviderConfig();
+      const controller = new PreviewController(
+        win,
+        config,
+        evidenceData,
+        this.pluginVersion
+      );
+      const previewWindow = openPreviewWindow(win, this.rootURI, controller);
+      this.previewWindows.add(previewWindow);
+      previewWindow.addEventListener('unload', () => {
+        this.previewWindows.delete(previewWindow);
+      }, { once: true });
     } catch (error) {
       Zotero.debug(`Zotero AI Notes: context menu click error: ${error}`, 2);
-      Zotero.alert(win, 'Zotero AI Notes', `操作失败：${error}`);
+      const message = error instanceof Error ? error.message : String(error);
+      Zotero.alert(win, 'Zotero AI Notes', `操作失败：${message}`);
     }
   }
 }

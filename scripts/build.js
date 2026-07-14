@@ -6,6 +6,7 @@ const isDev = process.argv.includes('--dev');
 const isWatch = process.argv.includes('--watch');
 
 const rootDir = path.resolve(__dirname, '..');
+const packageVersion = require(path.join(rootDir, 'package.json')).version;
 const srcDir = path.join(rootDir, 'src');
 const addonDir = path.join(rootDir, 'addon');
 const buildDir = path.join(rootDir, 'build');
@@ -18,7 +19,7 @@ function cleanBuild() {
 }
 
 function cleanOldXPI() {
-  const xpiPath = path.join(rootDir, 'zotero-ai-notes-0.1.0.xpi');
+  const xpiPath = path.join(rootDir, `zotero-ai-notes-${packageVersion}.xpi`);
   if (fs.existsSync(xpiPath)) {
     fs.unlinkSync(xpiPath);
   }
@@ -31,6 +32,15 @@ function cleanOldXPI() {
 function copyFiles() {
   const filesToCopy = [
     'manifest.json',
+    'prefs.js',
+    'preferences/preferences.xhtml',
+    'preferences/preferences.js',
+    'preferences/preferences.css',
+    'preview/preview.xhtml',
+    'preview/preview.js',
+    'preview/preview.css',
+    'preview/render-frame.xhtml',
+    'preview/render-frame.js',
     'locale/en-US/zotero-ai-notes.properties',
     'locale/zh-CN/zotero-ai-notes.properties'
   ];
@@ -44,6 +54,10 @@ function copyFiles() {
     }
     fs.copyFileSync(srcPath, destPath);
   }
+
+  const mermaidSource = path.join(rootDir, 'node_modules', 'mermaid', 'dist', 'mermaid.min.js');
+  const mermaidDestination = path.join(buildDir, 'preview', 'mermaid.min.js');
+  fs.copyFileSync(mermaidSource, mermaidDestination);
 }
 
 async function createXPI() {
@@ -59,7 +73,7 @@ async function createXPI() {
     }
   }
 
-  const xpiPath = path.join(rootDir, `zotero-ai-notes-${isDev ? 'dev' : '0.1.0'}.xpi`);
+  const xpiPath = path.join(rootDir, `zotero-ai-notes-${isDev ? 'dev' : packageVersion}.xpi`);
   return new Promise((resolve) => {
     zip.generateNodeStream({ type: 'nodebuffer', streamFiles: true })
       .pipe(fs.createWriteStream(xpiPath))

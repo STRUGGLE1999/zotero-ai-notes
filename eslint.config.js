@@ -20,6 +20,7 @@ module.exports = [
         ...globals.node,
         Zotero: 'readonly',
         Services: 'readonly',
+        PathUtils: 'readonly',
         Ci: 'readonly',
         Cc: 'readonly',
         Components: 'readonly'
