@@ -35,41 +35,183 @@
 → 生成 Mermaid 思维导图
 ```
 
-## 安装
+## macOS 安装与使用教程
 
-1. 下载或在项目根目录构建 `zotero-ai-notes-0.3.0.xpi`；
-2. 打开 Zotero 9；
-3. 进入“工具 → 插件”；
-4. 点击插件管理器右上角齿轮，选择“Install Plugin From File…”；
-5. 选择 XPI 文件并完成安装。
+以下步骤面向当前已经实机验证的环境：macOS + Zotero `9.0.6`。当前 XPI 的兼容范围为 Zotero `9.0` 至 `9.0.*`。
 
-当前 XPI 的 Zotero 兼容范围为 `9.0` 至 `9.0.*`。
+### 1. 安装前准备
 
-## 配置 Gemini
+请先确认：
 
-打开“Zotero 设置 → Zotero AI Notes”，填写：
+- 已安装并至少启动过一次 Zotero 9；
+- macOS 可以正常访问 Gemini API；
+- 已准备 Gemini API Key；
+- 如果手头没有现成的 XPI，需要安装 Node.js 18 或更高版本和 npm，从源码构建安装包。
 
-- Base URL：`https://generativelanguage.googleapis.com/v1beta/openai/`
-- API Key：从 Google AI Studio 获取的 Gemini API Key；
-- 模型：例如 `gemini-3.1-flash-lite`，也可以填写当前账号可用的其他 Gemini 模型。
+Zotero 版本可以从 macOS 顶部菜单“Zotero → 关于 Zotero”查看。
 
-先点击“保存”，再点击“测试连接”。看到“连接成功，API Key 和模型可用”后即可使用。
+### 2. 获取 XPI 安装包
 
-API Key 只保存在 Zotero/Firefox Login Manager 中，不会写入设置文件、调试日志或导出的笔记。
+#### 方式 A：使用已有安装包
 
-## 使用方法
+如果已经拿到 `zotero-ai-notes-0.3.0.xpi`，可以直接进入下一步。不要解压 XPI 文件。
 
-1. 将论文 PDF 导入 Zotero，并尽量为独立 PDF 创建父条目；
-2. 在 Zotero PDF 阅读器中完成高亮、评论或标签；
-3. 回到文献列表，选中论文父条目或 PDF 附件；
-4. 右键点击“AI 整理批注”；
-5. 检查插件识别出的关注重点，按需要取消主题或调整优先级；
-6. 点击“生成笔记”，检查 Markdown 和后台校验结果；
-7. 根据需要写回 Zotero、导出 Markdown，或切换到“思维导图”查看和导出 Mermaid。
+#### 方式 B：在 Mac 上从源码构建
 
-建议第一次测试至少准备 5 条高亮，并在其中加入 1～2 条评论，且覆盖不同页面。这样更容易验证关注重点识别和上下文定位能力。
+打开 macOS“终端”，依次执行：
 
-如果 macOS 上预览窗口没有出现在最前面，可从系统顶部菜单“窗口 → Zotero AI Notes”切换到插件窗口。
+```bash
+git clone https://github.com/STRUGGLE1999/zotero-ai-notes.git
+cd zotero-ai-notes
+npm install
+npm run build
+```
+
+构建成功后，可以在项目根目录看到：
+
+```text
+zotero-ai-notes-0.3.0.xpi
+```
+
+如需在安装前完整检查安装包，可继续执行：
+
+```bash
+node scripts/verify-xpi.js
+```
+
+终端最后显示 `XPI verification PASSED`，表示清单、生命周期函数、目录结构和 Zotero 9.0.6 兼容范围检查通过。
+
+### 3. 在 Zotero 中安装插件
+
+1. 打开 Zotero 9；
+2. 点击 macOS 顶部菜单“工具 → 插件”；
+3. 在插件管理器右上角点击齿轮按钮；
+4. 选择“Install Plugin From File…”或“从文件安装插件…”；
+5. 选择 `zotero-ai-notes-0.3.0.xpi`；
+6. 在确认窗口中允许安装；
+7. 检查插件列表中是否出现 `Zotero AI Notes 0.3.0`，并确认状态为启用。
+
+如果安装后右键菜单暂时没有出现，完全退出 Zotero，再重新打开一次。
+
+### 4. 配置 Gemini
+
+1. 点击 macOS 顶部菜单“Zotero → 设置”；
+2. 打开“Zotero AI Notes”设置页；
+3. 填写以下内容：
+
+   - Base URL：`https://generativelanguage.googleapis.com/v1beta/openai/`
+   - API Key：从 Google AI Studio 获取的 Gemini API Key；
+   - 模型：例如 `gemini-3.1-flash-lite`，也可以填写当前 API Key 实际可用的模型名称。
+
+4. 点击“保存”；
+5. 点击“测试连接”；
+6. 等待界面显示“连接成功，API Key 和模型可用”。
+
+API Key 只保存在本机 Zotero/Firefox Login Manager 中。设置页不会回显完整 Key，插件也不会把 Key 写入日志、调试文件或导出的笔记。
+
+### 5. 导入一篇新的论文 PDF
+
+1. 将论文 PDF 直接拖入 Zotero 文献列表；
+2. 如果 Zotero 自动识别到论文元数据，确认标题和作者正确；
+3. 如果 PDF 仍是独立附件，可以右键 PDF，选择“从 PDF 获取元数据”或为它创建父条目；
+4. 双击 PDF，在 Zotero 内置阅读器中打开论文。
+
+插件既支持选中文献父条目，也支持直接选中 PDF 附件。为了让生成笔记和写回结果的归属更清晰，推荐先创建父条目。
+
+### 6. 为论文添加测试批注
+
+在 Zotero PDF 阅读器中使用高亮或下划线工具。建议第一次完整测试准备：
+
+- 至少 5 条高亮或下划线；
+- 至少 1～2 条带有个人想法的评论；
+- 批注尽量分布在不同页面；
+- 可以为部分批注添加标签；
+- 优先标记研究问题、方法、关键结论、局限性或你真正关心的内容。
+
+批注会由 Zotero 自动保存。完成后返回文献列表。
+
+### 7. 生成 AI 笔记
+
+1. 在 Zotero 文献列表中选中论文父条目，或选中对应 PDF；
+2. 右键点击“AI 整理批注”；
+3. 等待插件读取 PDF、批注和批注所在页面的附近原文；
+4. 在“关注重点”区域检查插件识别出的主题；
+5. 取消不需要的主题，或调整主题优先级；
+6. 如有额外要求，可以在输入框中填写，例如“重点解释研究方法，不要扩展批注之外的内容”；
+7. 点击“生成笔记”；
+8. 等待 Gemini 返回结果并完成后台校验。
+
+生成完成后，中间区域会显示可编辑的 Markdown，右侧会显示渲染后的笔记预览。正式内容不会显示插件内部使用的 Evidence ID。
+
+### 8. 检查、写回和导出
+
+生成完成后可以执行：
+
+- **编辑 Markdown**：直接修改中间编辑区的内容；
+- **校验当前内容**：修改后重新执行后台校验；
+- **写回 Zotero**：在当前论文下创建新的子笔记，不覆盖已有笔记；
+- **导出 Markdown**：通过 macOS 保存窗口选择文件名和保存位置；
+- **查看思维导图**：切换到“思维导图”标签查看 Mermaid SVG；
+- **复制 Mermaid 源码**：复制后可粘贴到支持 Mermaid 的 Markdown 工具；
+- **导出思维导图**：保存包含 Mermaid `mindmap` 源码的 UTF-8 Markdown 文件。
+
+### 9. 完整流程测试清单
+
+使用新论文测试时，可以按下面的清单逐项确认：
+
+- [ ] Zotero 插件列表显示 `Zotero AI Notes 0.3.0` 且已启用；
+- [ ] 文献右键菜单只出现一个“AI 整理批注”；
+- [ ] 插件显示的论文标题正确；
+- [ ] PDF 数量和批注数量正确；
+- [ ] 大部分批注能够定位到附近原文；
+- [ ] 关注重点与自己的批注意图一致；
+- [ ] Gemini 成功返回 Markdown；
+- [ ] 后台校验通过，或明确显示需要补充的内容；
+- [ ] 正式笔记中没有类似 `E-XXXX-1-01` 的内部 Evidence ID；
+- [ ] “写回 Zotero”创建了新笔记，没有覆盖旧笔记；
+- [ ] Markdown 文件能够正常保存和打开；
+- [ ] 思维导图能显示节点，Mermaid 源码能够复制和导出。
+
+### 10. macOS 常见问题
+
+#### 安装时显示“无法安装插件”
+
+- 确认 Zotero 是 9.0.x；
+- 确认选择的是 `.xpi` 文件，而不是解压后的目录；
+- 重新执行 `npm run build` 和 `node scripts/verify-xpi.js`；
+- 打开“工具 → 开发者 → Error Console”，重新安装并查看最新红色错误。
+
+#### 没有“AI 整理批注”右键菜单
+
+- 确认插件处于启用状态；
+- 选中文献条目或 PDF 附件后再右键；
+- 完全退出并重新启动 Zotero；
+- 检查是否同时安装了多个旧版本。
+
+#### 提示没有批注
+
+- 确认批注是在 Zotero PDF 阅读器中创建的原生批注；
+- 返回文献列表后重新运行插件；
+- 确认当前选中的是包含该 PDF 的父条目或 PDF 本身。
+
+#### Gemini 连接失败
+
+- 检查 API Key 是否保存成功；
+- 检查 Base URL 末尾是否包含 `/openai/`；
+- 检查填写的模型是否对当前 API Key 可用；
+- 确认当前网络环境可以访问 Gemini API。
+
+#### 插件窗口没有出现在最前面
+
+从 macOS 顶部菜单选择“窗口 → Zotero AI Notes”，即可切换到已经打开的预览窗口。
+
+#### 部分批注没有找到附近原文
+
+扫描件、图片型 PDF、复杂双栏排版、公式或非常短的单字符批注可能无法稳定定位。插件会保留原始批注并显示警告，不会因此丢弃批注。
+
+#### 思维导图没有显示 SVG
+
+插件仍会保留树状结构和 Mermaid 源码。可以先复制或导出源码，再将错误信息反馈到项目 Issues。
 
 ## 数据与隐私
 
