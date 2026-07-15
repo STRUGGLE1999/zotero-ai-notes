@@ -156,7 +156,8 @@ var ZoteroAINotes_Preview = {
     try {
       const result = await this.controller.generate(
         this.selectedFocus(),
-        this.extraRequirement.value.trim()
+        this.extraRequirement.value.trim(),
+        stage => this.setGlobalStatus(stage, 'neutral')
       );
       this.editor.value = result.note.markdownNote;
       this.render();
