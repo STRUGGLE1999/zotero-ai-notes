@@ -93,6 +93,13 @@ export interface NotePipelineResult {
   validation: ValidationResult;
 }
 
+export type NotePipelineStage =
+  | '正在规划笔记结构…'
+  | '正在生成 Markdown 笔记…'
+  | '正在审查内容与原文依据…'
+  | '审查发现问题，正在自动修订…'
+  | '正在复核修订结果…';
+
 interface RawFocusTopic {
   id?: unknown;
   title?: unknown;
@@ -620,6 +627,7 @@ export async function generateValidatedNote(
   allFocusTopics: FocusTopic[],
   selectedFocus: SelectedFocus[],
   extraRequirement: string,
+  onProgress?: (stage: NotePipelineStage) => void,
   client = new GeminiClient()
 ): Promise<NotePipelineResult> {
   const selectedMap = new Map(selectedFocus.map(item => [item.id, item.priority]));
@@ -631,16 +639,21 @@ export async function generateValidatedNote(
     throw new Error('请至少选择一个关注重点，或填写本次特别关注的问题。');
   }
 
+  onProgress?.('正在规划笔记结构…');
   const outline = await generateOutline(config, data, focusTopics, extraRequirement, client);
+  onProgress?.('正在生成 Markdown 笔记…');
   let note = await generateNaturalNote(config, data, focusTopics, outline, extraRequirement, client);
+  onProgress?.('正在审查内容与原文依据…');
   let review = await reviewNote(config, data, note, client);
   let validation = combineValidation(note, data, review);
 
   if (!validation.valid) {
+    onProgress?.('审查发现问题，正在自动修订…');
     note = await generateNaturalNote(config, data, focusTopics, outline, extraRequirement, client, {
       errors: validation.errors,
       review
     });
+    onProgress?.('正在复核修订结果…');
     review = await reviewNote(config, data, note, client);
     validation = combineValidation(note, data, review);
   }
