@@ -29,7 +29,10 @@ function renderInline(value: string): string {
 }
 
 export function markdownToSafeHtml(markdown: string): string {
-  const lines = markdown.replace(/\r\n?/g, '\n').split('\n');
+  const normalized = !markdown.includes('\n') && markdown.includes('\\n')
+    ? markdown.replace(/\\r\\n|\\n/g, '\n')
+    : markdown;
+  const lines = normalized.replace(/\r\n?/g, '\n').split('\n');
   const output: string[] = [];
   let inCode = false;
   let codeLines: string[] = [];

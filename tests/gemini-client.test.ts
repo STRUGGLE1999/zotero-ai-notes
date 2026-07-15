@@ -3,24 +3,26 @@ import { GeminiClient } from '../src/llm/gemini-client';
 import type { ProviderConfig } from '../src/config/settings';
 
 const config: ProviderConfig = {
+  provider: 'gemini',
+  providerLabel: 'Google Gemini',
   baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
   model: 'gemini-3.1-flash-lite',
   apiKey: 'test-secret-key'
 };
 
 describe('GeminiClient', () => {
-  it('tests the configured model without sending document content', async () => {
+  it('tests the configured model with a minimal compatible chat request', async () => {
     const request = vi.fn(async () => ({ response: { id: config.model } } as XMLHttpRequest));
     const client = new GeminiClient(request);
 
     await client.testConnection(config);
 
     expect(request).toHaveBeenCalledWith(
-      'GET',
-      'https://generativelanguage.googleapis.com/v1beta/openai/models/gemini-3.1-flash-lite',
+      'POST',
+      'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer test-secret-key' }),
-        body: undefined,
+        body: expect.stringContaining('Reply with OK.'),
         debug: false,
         logBodyLength: 0
       })

@@ -26,6 +26,7 @@ var ZoteroAINotes_Preview = {
     this.documentSummary = document.getElementById('document-summary');
     this.globalStatus = document.getElementById('global-status');
     this.focusLoading = document.getElementById('focus-loading');
+    this.retryFocusButton = document.getElementById('retry-focus-button');
     this.focusList = document.getElementById('focus-list');
     this.focusWarnings = document.getElementById('focus-warnings');
     this.extraRequirement = document.getElementById('extra-requirement');
@@ -52,6 +53,7 @@ var ZoteroAINotes_Preview = {
 
   bindEvents() {
     this.generateButton.addEventListener('click', () => this.generate());
+    this.retryFocusButton.addEventListener('click', () => this.loadFocusTopics());
     this.validateButton.addEventListener('click', () => this.validateEdited());
     this.saveButton.addEventListener('click', () => this.save());
     this.exportButton.addEventListener('click', () => this.export());
@@ -60,6 +62,7 @@ var ZoteroAINotes_Preview = {
     this.mindmapTab.addEventListener('click', () => this.showPreview('mindmap'));
     this.copyMindmapButton.addEventListener('click', () => this.copyMindmap());
     document.getElementById('cancel-button').addEventListener('click', () => window.close());
+    document.getElementById('close-button').addEventListener('click', () => window.close());
     this.editor.addEventListener('input', () => {
       this.render();
       this.dirty = true;
@@ -72,6 +75,13 @@ var ZoteroAINotes_Preview = {
   },
 
   async loadFocusTopics() {
+    if (this.busy) return;
+    this.focusLoading.hidden = false;
+    this.focusLoading.textContent = '正在根据批注识别关注重点…';
+    this.focusLoading.className = 'loading';
+    this.retryFocusButton.hidden = true;
+    this.focusWarnings.textContent = '';
+    this.generateButton.disabled = true;
     this.setBusy(true, '正在识别关注重点…');
     try {
       const result = await this.controller.identifyFocus();
@@ -81,8 +91,9 @@ var ZoteroAINotes_Preview = {
       this.generateButton.disabled = false;
       this.setGlobalStatus('请确认关注重点', 'success');
     } catch (error) {
-      this.focusLoading.textContent = this.errorMessage(error);
+      this.focusLoading.textContent = `识别失败原因：${this.errorMessage(error)}`;
       this.focusLoading.className = 'loading error';
+      this.retryFocusButton.hidden = false;
       this.setGlobalStatus('识别失败', 'error');
     } finally {
       this.setBusy(false);

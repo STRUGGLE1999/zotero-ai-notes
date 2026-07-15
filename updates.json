@@ -1,7 +1,19 @@
 {
   "addons": {
     "zotero-ai-notes@example.com": {
-      "updates": []
+      "updates": [
+        {
+          "version": "0.3.1",
+          "update_link": "https://raw.githubusercontent.com/STRUGGLE1999/zotero-ai-notes/main/zotero-ai-notes-0.3.1.xpi",
+          "update_hash": "sha256:845929a82dd75f047d8dde91a10bf2b86a7dadd755930ec8fa13a92506c84575",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "9.0",
+              "strict_max_version": "9.0.*"
+            }
+          }
+        }
+      ]
     }
   }
 }

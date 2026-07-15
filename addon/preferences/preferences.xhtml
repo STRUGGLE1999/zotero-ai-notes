@@ -2,10 +2,18 @@
       xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
       xmlns:html="http://www.w3.org/1999/xhtml">
   <groupbox>
-    <label><html:h2>Gemini 配置</html:h2></label>
-    <description>API Key 只保存在本机凭据库，不会写入日志或调试文件。</description>
+    <label><html:h2>AI 模型提供商</html:h2></label>
+    <description>选择预设后仍可修改 Base URL 和模型。API Key 只保存在本机凭据库。</description>
 
-    <html:label for="zotero-ai-notes-base-url">Base URL</html:label>
+    <html:label for="zotero-ai-notes-provider">API 提供商</html:label>
+    <html:select id="zotero-ai-notes-provider">
+      <html:option value="gemini">Google Gemini</html:option>
+      <html:option value="openai">OpenAI / OpenAI 兼容</html:option>
+      <html:option value="deepseek">DeepSeek</html:option>
+      <html:option value="custom">自定义 OpenAI 兼容服务</html:option>
+    </html:select>
+
+    <html:label for="zotero-ai-notes-base-url">Base URL（可修改）</html:label>
     <html:input id="zotero-ai-notes-base-url" type="url"
                 preference="extensions.zotero.aiNotes.baseURL"/>
 
@@ -14,7 +22,7 @@
                 placeholder="未配置" autocomplete="off"/>
     <html:small id="zotero-ai-notes-api-key-status"></html:small>
 
-    <html:label for="zotero-ai-notes-model">模型</html:label>
+    <html:label for="zotero-ai-notes-model">模型名称</html:label>
     <html:input id="zotero-ai-notes-model" type="text"
                 preference="extensions.zotero.aiNotes.model"/>
 
@@ -24,5 +32,6 @@
       <button id="zotero-ai-notes-clear-key" label="清除 API Key"/>
     </hbox>
     <description id="zotero-ai-notes-result"></description>
+    <description>OpenAI 兼容服务示例：选择“OpenAI / OpenAI 兼容”，再填写服务商提供的 Base URL、API Key 和模型名称。</description>
   </groupbox>
 </vbox>

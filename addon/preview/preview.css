@@ -11,30 +11,33 @@
 }
 
 window {
-  min-width: 1000px;
-  min-height: 650px;
+  min-width: 760px;
+  min-height: 480px;
   background: Canvas;
   color: CanvasText;
 }
 
 .mindmap-render-frame {
-  position: fixed;
+  position: absolute;
   left: -10000px;
   top: 0;
-  width: 1000px;
-  height: 800px;
+  width: 1px;
+  height: 1px;
   border: 0;
   opacity: 0;
   pointer-events: none;
 }
 
 .app-shell {
+  position: relative;
   box-sizing: border-box;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   width: 100vw;
   height: 100vh;
+  min-height: 0;
   margin: 0;
+  overflow: hidden;
 }
 
 .app-header,
@@ -45,6 +48,13 @@ window {
   gap: 16px;
   padding: 14px 18px;
   border-bottom: 1px solid var(--border);
+}
+
+.header-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
 }
 
 .app-footer {
@@ -71,6 +81,7 @@ h1, h2, p {
   display: grid;
   grid-template-columns: minmax(250px, 0.8fr) minmax(360px, 1.2fr) minmax(360px, 1.2fr);
   min-height: 0;
+  overflow: auto;
 }
 
 .panel {
@@ -219,6 +230,11 @@ button:disabled {
   width: 100%;
 }
 
+#retry-focus-button {
+  width: 100%;
+  margin: 10px 0 4px;
+}
+
 .status,
 .validation {
   padding: 6px 10px;
@@ -255,11 +271,28 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
-.markdown-body h1 { font-size: 1.7em; }
-.markdown-body h2 { margin-top: 1.5em; font-size: 1.35em; }
-.markdown-body h3 { margin-top: 1.3em; font-size: 1.15em; }
-.markdown-body p { margin: 0.7em 0; }
-.markdown-body li { margin: 0.35em 0; }
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6,
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body blockquote,
+.markdown-body pre {
+  display: block;
+}
+.markdown-body h1 { margin: 0.9em 0 0.5em; font-size: 1.7em; }
+.markdown-body h2 { margin: 1.5em 0 0.55em; font-size: 1.35em; }
+.markdown-body h3 { margin: 1.3em 0 0.5em; font-size: 1.15em; }
+.markdown-body p { margin: 0.75em 0; }
+.markdown-body ul,
+.markdown-body ol { margin: 0.7em 0; padding-left: 1.6em; }
+.markdown-body ul { list-style: disc outside; }
+.markdown-body ol { list-style: decimal outside; }
+.markdown-body li { display: list-item; margin: 0.4em 0; }
 .markdown-body blockquote {
   margin-left: 0;
   padding-left: 12px;
@@ -342,5 +375,20 @@ button:disabled {
 @media (max-width: 1100px) {
   .workspace {
     grid-template-columns: 260px minmax(340px, 1fr) minmax(340px, 1fr);
+  }
+}
+
+@media (max-height: 620px) {
+  .app-header,
+  .app-footer {
+    padding: 8px 12px;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
+  #markdown-editor {
+    min-height: 360px;
   }
 }
