@@ -4,7 +4,7 @@
       "updates": [
         {
           "version": "0.3.1",
-          "update_link": "https://raw.githubusercontent.com/STRUGGLE1999/zotero-ai-notes/main/zotero-ai-notes-0.3.1.xpi",
+          "update_link": "https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.3.1/zotero-ai-notes-0.3.1.xpi",
           "update_hash": "sha256:845929a82dd75f047d8dde91a10bf2b86a7dadd755930ec8fa13a92506c84575",
           "applications": {
             "zotero": {

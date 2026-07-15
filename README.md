@@ -2,7 +2,7 @@
 
 面向 Zotero 9 的 AI 论文批注整理插件。它会读取用户在 PDF 中留下的高亮、评论、标签和页码，结合批注附近的原文，生成经过后台校验的 Markdown 笔记，并进一步生成 Mermaid 思维导图。
 
-> 当前版本：`0.3.0`；已实机验证：macOS + Zotero `9.0.6`。
+> 当前版本：`0.3.1`；已实机验证：macOS + Zotero `9.0.6`。
 > Windows / Linux 使用同一套跨平台接口，仍需分别完成一次实机回归。
 
 ## 已实现功能
@@ -52,9 +52,12 @@ Zotero 版本可以从 macOS 顶部菜单“Zotero → 关于 Zotero”查看。
 
 ### 2. 获取 XPI 安装包
 
-#### 方式 A：使用已有安装包
+#### 方式 A：从 GitHub Releases 下载（推荐）
 
-如果已经拿到 `zotero-ai-notes-0.3.0.xpi`，可以直接进入下一步。不要解压 XPI 文件。
+- [下载最新稳定版 0.3.1](https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.3.1/zotero-ai-notes-0.3.1.xpi)
+- [查看并下载全部历史版本](https://github.com/STRUGGLE1999/zotero-ai-notes/releases)
+
+下载后直接进入下一步，不要解压 XPI 文件。如果浏览器尝试打开 `.xpi`，请右键下载链接并选择“链接另存为”。
 
 #### 方式 B：在 Mac 上从源码构建
 
@@ -70,7 +73,7 @@ npm run build
 构建成功后，可以在项目根目录看到：
 
 ```text
-zotero-ai-notes-0.3.0.xpi
+zotero-ai-notes-0.3.1.xpi
 ```
 
 如需在安装前完整检查安装包，可继续执行：
@@ -87,9 +90,9 @@ node scripts/verify-xpi.js
 2. 点击 macOS 顶部菜单“工具 → 插件”；
 3. 在插件管理器右上角点击齿轮按钮；
 4. 选择“Install Plugin From File…”或“从文件安装插件…”；
-5. 选择 `zotero-ai-notes-0.3.0.xpi`；
+5. 选择 `zotero-ai-notes-0.3.1.xpi`；
 6. 在确认窗口中允许安装；
-7. 检查插件列表中是否出现 `Zotero AI Notes 0.3.0`，并确认状态为启用。
+7. 检查插件列表中是否出现 `Zotero AI Notes 0.3.1`，并确认状态为启用。
 
 如果安装后右键菜单暂时没有出现，完全退出 Zotero，再重新打开一次。
 
@@ -159,7 +162,7 @@ API Key 只保存在本机 Zotero/Firefox Login Manager 中。设置页不会回
 
 使用新论文测试时，可以按下面的清单逐项确认：
 
-- [ ] Zotero 插件列表显示 `Zotero AI Notes 0.3.0` 且已启用；
+- [ ] Zotero 插件列表显示 `Zotero AI Notes 0.3.1` 且已启用；
 - [ ] 文献右键菜单只出现一个“AI 整理批注”；
 - [ ] 插件显示的论文标题正确；
 - [ ] PDF 数量和批注数量正确；
@@ -240,14 +243,14 @@ npm run build
 构建完成后，项目根目录会生成：
 
 ```text
-zotero-ai-notes-0.3.0.xpi
+zotero-ai-notes-0.3.1.xpi
 ```
 
 当前自动验证结果：
 
 - TypeScript 类型检查通过；
 - ESLint 0 个错误；
-- 11 个测试文件、36 个测试全部通过；
+- 11 个测试文件、38 个测试全部通过；
 - XPI 结构与压缩包完整性检查通过。
 
 ## 项目结构
@@ -284,6 +287,7 @@ scripts/                构建及 XPI 验证脚本
 | `0.2.0` | 关注重点、生成、校验、预览、写回和导出闭环 |
 | `0.2.1`–`0.2.3` | Evidence ID 展示、窗口交互和 Gemini 数字批注 ID 等问题修复 |
 | `0.3.0` | Mermaid 思维导图、SVG 预览、源码复制和导出 |
+| `0.3.1` | 小窗口与 Windows 布局修复、多模型提供商、Markdown 预览和识别失败重试 |
 
 详细变更见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -293,7 +297,7 @@ scripts/                构建及 XPI 验证脚本
 - 优化无文本 PDF、扫描件和复杂排版的上下文定位；
 - 增加可配置的笔记模板；
 - 在 Mermaid 稳定后评估 XMind 格式导出；
-- 完善发布、升级和自动更新流程。
+- 继续完善 GitHub Releases、升级兼容性和自动更新验证。
 
 ## 许可证
 
