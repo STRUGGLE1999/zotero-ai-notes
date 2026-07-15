@@ -159,6 +159,7 @@ describe('note pipeline', () => {
       [focus],
       [{ id: 'F1', priority: 1 }],
       '',
+      undefined,
       client as never
     );
 
@@ -199,11 +200,34 @@ describe('note pipeline', () => {
       [focus],
       [{ id: 'F1', priority: 1 }],
       '',
+      undefined,
       client as never
     );
 
     expect(result.validation.valid).toBe(true);
     expect(result.note.markdownNote).not.toContain('999');
     expect(client.generateJson).toHaveBeenCalledTimes(5);
+  });
+
+  it('reports each long-running generation stage', async () => {
+    const responses = [outlineResponse, validNoteResponse, supportedReview];
+    const client = { generateJson: vi.fn(async () => responses.shift()) };
+    const progress = vi.fn();
+
+    await generateValidatedNote(
+      config,
+      data,
+      [focus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      progress,
+      client as never
+    );
+
+    expect(progress.mock.calls.map(call => call[0])).toEqual([
+      '正在规划笔记结构…',
+      '正在生成 Markdown 笔记…',
+      '正在审查内容与原文依据…'
+    ]);
   });
 });
