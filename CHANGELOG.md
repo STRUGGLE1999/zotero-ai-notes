@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.5 - 2026-07-15
+
+- 递归兼容 Responses API output 中的 text、output_text、content、value 和 summary 正文键。
+- 空正文诊断显示 output 项与 content 项字段名。
+
+## 0.3.4 - 2026-07-15
+
+- Chat Completions 返回空正文时自动回退到同一服务的 Responses API。
+- 诊断信息增加 finish_reason，区分格式不兼容与模型未输出正文。
+
+## 0.3.3 - 2026-07-15
+
+- 进一步兼容单对象 content、delta、reasoning、analysis 等网关返回字段。
+- 空正文错误会显示安全的嵌套字段名，便于定位兼容服务差异。
+
+## 0.3.2 - 2026-07-15
+
+- 将完整生成请求的超时从 60 秒延长到 180 秒，连接测试仍保持 30 秒。
+- 兼容 Chat Completions 内容数组、Responses API output 和部分兼容服务的正文结构。
+- 连接测试现在会验证模型确实返回正文，避免“连接成功但无法生成”的误报。
+- 生成时显示规划、写作、审查、自动修订和复核的具体阶段。
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
