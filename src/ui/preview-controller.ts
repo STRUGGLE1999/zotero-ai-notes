@@ -5,6 +5,7 @@ import {
   generateValidatedNote,
   identifyFocusTopics,
   type FocusResult,
+  type NotePipelineStage,
   type SelectedFocus
 } from '../llm/note-pipeline';
 import { markdownToSafeHtml } from '../output/markdown';
@@ -42,7 +43,11 @@ export class PreviewController {
     return this.focusResult;
   }
 
-  async generate(selectedFocus: SelectedFocus[], extraRequirement: string) {
+  async generate(
+    selectedFocus: SelectedFocus[],
+    extraRequirement: string,
+    onProgress?: (stage: NotePipelineStage) => void
+  ) {
     if (!this.focusResult) {
       throw new Error('请先完成关注重点识别。');
     }
@@ -51,7 +56,8 @@ export class PreviewController {
       this.data,
       this.focusResult.focusTopics,
       selectedFocus,
-      extraRequirement
+      extraRequirement,
+      onProgress
     );
     this.lastMarkdown = result.note.markdownNote;
     return result;
