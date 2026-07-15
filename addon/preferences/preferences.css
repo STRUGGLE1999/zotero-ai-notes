@@ -2,7 +2,8 @@
   max-width: 720px;
 }
 
-#zotero-ai-notes-preferences-pane html|input {
+#zotero-ai-notes-preferences-pane html|input,
+#zotero-ai-notes-preferences-pane html|select {
   box-sizing: border-box;
   margin: 4px 0 12px;
   min-height: 32px;

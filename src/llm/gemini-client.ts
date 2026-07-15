@@ -24,13 +24,13 @@ function parseJsonContent<T>(content: string): T {
   const start = withoutFence.indexOf('{');
   const end = withoutFence.lastIndexOf('}');
   if (start === -1 || end < start) {
-    throw new Error('Gemini 返回结果中没有可解析的 JSON 对象。');
+    throw new Error('模型返回结果中没有可解析的 JSON 对象。');
   }
   try {
     return JSON.parse(withoutFence.slice(start, end + 1)) as T;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Gemini 返回的 JSON 格式无效：${message}`);
+    throw new Error(`模型返回的 JSON 格式无效：${message}`);
   }
 }
 
@@ -58,8 +58,13 @@ export class GeminiClient {
   constructor(private request: HttpRequest = Zotero.HTTP.request.bind(Zotero.HTTP)) {}
 
   async testConnection(config: ProviderConfig): Promise<void> {
-    const url = `${config.baseURL}models/${encodeURIComponent(config.model)}`;
-    await this.send('GET', url, config);
+    const url = `${config.baseURL}chat/completions`;
+    await this.send('POST', url, config, {
+      model: config.model,
+      messages: [{ role: 'user', content: 'Reply with OK.' }],
+      temperature: 0,
+      max_tokens: 2
+    });
   }
 
   async generateMarkdown(
@@ -75,7 +80,7 @@ export class GeminiClient {
     const response = parseResponse(xhr) as ChatCompletionResponse;
     const markdown = response.choices?.[0]?.message?.content?.trim();
     if (!markdown) {
-      throw new Error('Gemini 返回结果中没有可用的 Markdown 内容。');
+      throw new Error('模型返回结果中没有可用的 Markdown 内容。');
     }
     return markdown;
   }
@@ -94,7 +99,7 @@ export class GeminiClient {
     const response = parseResponse(xhr) as ChatCompletionResponse;
     const content = response.choices?.[0]?.message?.content;
     if (!content) {
-      throw new Error('Gemini 返回结果中没有可用的 JSON 内容。');
+      throw new Error('模型返回结果中没有可用的 JSON 内容。');
     }
     return parseJsonContent<T>(content);
   }
@@ -119,7 +124,7 @@ export class GeminiClient {
         logBodyLength: 0
       });
     } catch (error) {
-      throw new Error(`Gemini 请求失败：${safeErrorMessage(error, config.apiKey)}`);
+      throw new Error(`${config.providerLabel} 请求失败：${safeErrorMessage(error, config.apiKey)}`);
     }
   }
 }

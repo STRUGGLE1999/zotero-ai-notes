@@ -156,10 +156,8 @@ function stringArray(value: unknown): string[] {
 }
 
 function identifierArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
+  const values = Array.isArray(value) ? value : [value];
+  return values
     .map(item => {
       if (typeof item === 'string') {
         return item.trim();
@@ -212,7 +210,8 @@ function uniqueAnnotations(data: EvidenceDebugData) {
 
 function normalizeFocusResult(raw: RawFocusResult, data: EvidenceDebugData): FocusResult {
   const knownAnnotationIds = new Set(data.evidenceUnits.map(unit => unit.annotationId));
-  const rawTopics = raw.focus_topics || raw.focusTopics || [];
+  const candidateTopics = raw.focus_topics || raw.focusTopics || [];
+  const rawTopics = Array.isArray(candidateTopics) ? candidateTopics : [];
   const focusTopics = rawTopics.map((topic, index): FocusTopic => {
     const annotationIds = identifierArray(topic.annotation_ids || topic.annotationIds);
     const invalid = annotationIds.filter(id => !knownAnnotationIds.has(id));
@@ -233,7 +232,7 @@ function normalizeFocusResult(raw: RawFocusResult, data: EvidenceDebugData): Foc
   }).filter(topic => topic.annotationIds.length > 0);
 
   if (!focusTopics.length) {
-    throw new Error('Gemini 没有识别出可由真实批注支持的关注重点。');
+    throw new Error('模型没有返回可由真实批注支持的关注重点（可能遗漏了 annotation_ids）。');
   }
 
   const rawQuestions = raw.user_questions || raw.userQuestions || [];
@@ -293,7 +292,7 @@ function normalizeGeneratedNote(raw: RawGeneratedNote): GeneratedNote {
   }));
   const markdown = stringValue(raw.markdown_note || raw.markdownNote);
   if (!markdown) {
-    throw new Error('Gemini 返回结果中没有自然 Markdown 笔记。');
+    throw new Error('模型返回结果中没有自然 Markdown 笔记。');
   }
   return {
     title: stringValue(raw.title, 'AI 整理笔记'),
@@ -331,15 +330,15 @@ function normalizeReviewResult(raw: RawReviewResult): ReviewResult {
 function validateOutline(outline: OutlineResult, data: EvidenceDebugData) {
   const evidenceIds = new Set(data.evidenceUnits.map(unit => unit.id));
   if (!outline.outline.length) {
-    throw new Error('Gemini 返回的大纲为空。');
+    throw new Error('模型返回的大纲为空。');
   }
   for (const section of outline.outline) {
     if (!section.evidenceIds.length) {
-      throw new Error(`大纲章节“${section.heading}”没有 Evidence。`);
+      throw new Error(`模型返回的大纲章节“${section.heading}”没有 Evidence。`);
     }
     const invalid = section.evidenceIds.filter(id => !evidenceIds.has(id));
     if (invalid.length) {
-      throw new Error(`大纲章节“${section.heading}”包含不存在的 Evidence：${invalid.join(', ')}`);
+      throw new Error(`模型返回的大纲章节“${section.heading}”包含不存在的 Evidence：${invalid.join(', ')}`);
     }
   }
 }
@@ -431,7 +430,7 @@ export async function identifyFocusTopics(
   data: EvidenceDebugData,
   client = new GeminiClient()
 ): Promise<FocusResult> {
-  const raw = await client.generateJson<RawFocusResult>(config, [
+  const messages: Array<{ role: 'system' | 'user'; content: string }> = [
     {
       role: 'system',
       content:
@@ -466,8 +465,37 @@ export async function identifyFocusTopics(
         }
       })
     }
-  ]);
-  return normalizeFocusResult(raw, data);
+  ];
+  const raw = await client.generateJson<RawFocusResult>(config, messages);
+  try {
+    return normalizeFocusResult(raw, data);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    const corrected = await client.generateJson<RawFocusResult>(config, [
+      {
+        role: 'system',
+        content: '修正上一次关注重点 JSON。annotation_ids 只能从允许列表逐字复制。只输出 JSON。'
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          task: '修正关注重点识别结果',
+          previous_error: reason,
+          previous_result: raw,
+          allowed_annotation_ids: uniqueAnnotations(data).map(item => item.id),
+          annotations: uniqueAnnotations(data),
+          required_schema: {
+            focus_topics: [{
+              id: 'F1', title: '', description: '', reason: '',
+              annotation_ids: ['必须来自 allowed_annotation_ids'], confidence: 'medium', priority: 1
+            }],
+            user_questions: [], warnings: []
+          }
+        })
+      }
+    ]);
+    return normalizeFocusResult(corrected, data);
+  }
 }
 
 async function generateOutline(

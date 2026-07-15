@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Project initialization
 
+## [0.3.1] - 2026-07-15
+
+### Added
+
+- 设置页新增 Gemini、OpenAI 兼容、DeepSeek 和自定义提供商预设，保留 Base URL、模型名称和连接测试。
+- 关注重点识别失败时显示具体原因，并可在当前窗口重新识别。
+- Windows 和小屏窗口提供始终可见的标题栏关闭按钮。
+
+### Fixed
+
+- 隐藏的 Mermaid 渲染框不再挤占预览窗口高度，窗口尺寸会按可用屏幕自动收缩。
+- Markdown 预览显式恢复标题、段落和列表布局，并兼容模型返回转义换行的情况。
+- 关注重点结构校验失败时自动请求模型修正一次，兼容单值形式的批注 ID。
+
 ## [0.3.0] - 2026-07-14
 
 ### Added

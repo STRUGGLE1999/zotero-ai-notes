@@ -30,7 +30,7 @@ export default class Addon {
     Zotero.ZoteroAINotes = {
       settings: {
         getPublicSettings: () => this.settings.getPublicSettings(),
-        save: (update: { baseURL: string; model: string; apiKey?: string }) =>
+        save: (update: { provider: string; baseURL: string; model: string; apiKey?: string }) =>
           this.settings.save(update),
         clearApiKey: () => this.settings.clearApiKey(),
         testConnection: async () => {

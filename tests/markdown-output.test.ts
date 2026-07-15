@@ -29,6 +29,14 @@ describe('Markdown output', () => {
     expect(html).not.toContain('href="javascript:');
   });
 
+  it('renders escaped model newlines as Markdown blocks', () => {
+    const html = markdownToSafeHtml('## 标题\\n\\n- **重点**\\n- 第二项');
+
+    expect(html).toContain('<h2>标题</h2>');
+    expect(html).toContain('<ul>');
+    expect(html).toContain('<strong>重点</strong>');
+  });
+
   it('creates a new child note without overwriting existing notes', async () => {
     const saveTx = vi.fn(async () => 42);
     const setNote = vi.fn();

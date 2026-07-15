@@ -9,6 +9,8 @@ import {
 } from '../src/llm/note-pipeline';
 
 const config: ProviderConfig = {
+  provider: 'gemini',
+  providerLabel: 'Google Gemini',
   baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
   model: 'gemini-test',
   apiKey: 'secret'
@@ -132,6 +134,19 @@ describe('note pipeline', () => {
     const result = await identifyFocusTopics(config, numericData, client as never);
 
     expect(result.focusTopics[0].annotationIds).toEqual(['5']);
+  });
+
+  it('automatically asks the model to correct a malformed focus result once', async () => {
+    const responses = [
+      { focus_topics: [{ id: 'F1', title: '方法', annotation_ids: [] }] },
+      { focus_topics: [{ id: 'F1', title: '方法', annotation_ids: 'A1', priority: 1 }] }
+    ];
+    const client = { generateJson: vi.fn(async () => responses.shift()) };
+
+    const result = await identifyFocusTopics(config, data, client as never);
+
+    expect(result.focusTopics[0].annotationIds).toEqual(['A1']);
+    expect(client.generateJson).toHaveBeenCalledTimes(2);
   });
 
   it('generates a natural note, validates mappings, and keeps IDs backstage', async () => {

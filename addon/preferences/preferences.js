@@ -4,6 +4,7 @@ var ZoteroAINotes_Preferences = {
   async init() {
     if (!this.initialized) {
       this.baseURL = document.getElementById('zotero-ai-notes-base-url');
+      this.provider = document.getElementById('zotero-ai-notes-provider');
       this.apiKey = document.getElementById('zotero-ai-notes-api-key');
       this.apiKeyStatus = document.getElementById('zotero-ai-notes-api-key-status');
       this.model = document.getElementById('zotero-ai-notes-model');
@@ -15,6 +16,7 @@ var ZoteroAINotes_Preferences = {
         .addEventListener('command', () => this.testConnection());
       document.getElementById('zotero-ai-notes-clear-key')
         .addEventListener('command', () => this.clearApiKey());
+      this.provider.addEventListener('change', () => this.applyProviderPreset());
       this.initialized = true;
     }
 
@@ -26,18 +28,20 @@ var ZoteroAINotes_Preferences = {
 
   async refresh() {
     const settings = await Zotero.ZoteroAINotes.settings.getPublicSettings();
+    this.provider.value = settings.provider;
     this.baseURL.value = settings.baseURL;
     this.model.value = settings.model;
     this.apiKey.value = '';
     this.apiKey.placeholder = settings.hasApiKey
       ? '已安全保存；留空表示不修改'
-      : '请输入 Gemini API Key';
+      : '请输入 API Key';
     this.apiKeyStatus.textContent = settings.hasApiKey ? 'API Key 已保存' : '尚未配置 API Key';
   },
 
   async save(showResult = true) {
     try {
       await Zotero.ZoteroAINotes.settings.save({
+        provider: this.provider.value,
         baseURL: this.baseURL.value,
         model: this.model.value,
         apiKey: this.apiKey.value || undefined
@@ -51,6 +55,19 @@ var ZoteroAINotes_Preferences = {
       this.showResult(error.message || String(error), true);
       return false;
     }
+  },
+
+  applyProviderPreset() {
+    const presets = {
+      gemini: ['https://generativelanguage.googleapis.com/v1beta/openai/', 'gemini-3.1-flash-lite'],
+      openai: ['https://api.openai.com/v1/', 'gpt-4.1-mini'],
+      deepseek: ['https://api.deepseek.com/v1/', 'deepseek-chat']
+    };
+    const preset = presets[this.provider.value];
+    if (!preset) return;
+    this.baseURL.value = preset[0];
+    this.model.value = preset[1];
+    this.showResult('已填入提供商预设；可继续修改 Base URL 和模型名称。', false);
   },
 
   async testConnection() {

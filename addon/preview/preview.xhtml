@@ -10,19 +10,16 @@
         xmlns:html="http://www.w3.org/1999/xhtml">
   <script src="preview.js"/>
 
-  <html:iframe id="mindmap-render-frame"
-               class="mindmap-render-frame"
-               src="render-frame.xhtml"
-               title="Mermaid renderer"
-               aria-hidden="true"
-               tabindex="-1"></html:iframe>
   <html:main class="app-shell">
     <html:header class="app-header">
       <html:div>
         <html:h1>AI 整理批注</html:h1>
         <html:p id="document-summary">正在准备文献数据…</html:p>
       </html:div>
-      <html:div id="global-status" class="status neutral">准备中</html:div>
+      <html:div class="header-actions">
+        <html:div id="global-status" class="status neutral">准备中</html:div>
+        <html:button id="close-button" title="关闭窗口" aria-label="关闭窗口">关闭</html:button>
+      </html:div>
     </html:header>
 
     <html:div class="workspace">
@@ -30,6 +27,7 @@
         <html:h2>1. 关注重点</html:h2>
         <html:p class="hint">取消不需要的主题，或调整优先级后再生成。</html:p>
         <html:div id="focus-loading" class="loading">正在根据批注识别关注重点…</html:div>
+        <html:button id="retry-focus-button" hidden="hidden">重新识别关注重点</html:button>
         <html:div id="focus-list" class="focus-list"></html:div>
 
         <html:label for="extra-requirement">本次补充要求</html:label>
@@ -85,5 +83,11 @@
         <html:button id="save-button" class="primary" disabled="disabled">写回 Zotero</html:button>
       </html:div>
     </html:footer>
+    <html:iframe id="mindmap-render-frame"
+                 class="mindmap-render-frame"
+                 src="render-frame.xhtml"
+                 title="Mermaid renderer"
+                 aria-hidden="true"
+                 tabindex="-1"></html:iframe>
   </html:main>
 </window>

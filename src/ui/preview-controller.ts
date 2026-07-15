@@ -125,10 +125,14 @@ export function openPreviewWindow(
   _rootURI: string,
   controller: PreviewController
 ): any {
+  const availableWidth = Number(parentWindow.screen?.availWidth) || 1360;
+  const availableHeight = Number(parentWindow.screen?.availHeight) || 860;
+  const width = Math.max(760, Math.min(1280, availableWidth - 80));
+  const height = Math.max(480, Math.min(780, availableHeight - 80));
   return parentWindow.openDialog(
     'chrome://zotero-ai-notes/content/preview/preview.xhtml',
     'zotero-ai-notes-preview',
-    'chrome,centerscreen,resizable,width=1280,height=780',
+    `chrome,centerscreen,resizable,width=${width},height=${height}`,
     { wrappedJSObject: { controller } }
   );
 }
