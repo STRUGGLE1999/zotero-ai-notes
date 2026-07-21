@@ -230,6 +230,48 @@ button:disabled {
   width: 100%;
 }
 
+.generation-details {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: Canvas;
+  font-size: 12px;
+}
+
+.generation-summary {
+  margin-bottom: 8px;
+  color: var(--muted);
+}
+
+.generation-stages {
+  display: grid;
+  gap: 5px;
+}
+
+.generation-stage {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: start;
+}
+
+.generation-stage .stage-meta {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.generation-stage.completed .stage-icon { color: var(--success); }
+.generation-stage.failed .stage-icon,
+.generation-stage.cancelled .stage-icon { color: var(--danger); }
+.generation-stage.running .stage-icon { color: var(--primary); }
+
+.generation-failure {
+  margin-top: 8px;
+  color: var(--danger);
+  white-space: pre-wrap;
+}
+
 #retry-focus-button {
   width: 100%;
   margin: 10px 0 4px;

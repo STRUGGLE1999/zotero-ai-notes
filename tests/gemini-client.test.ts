@@ -153,4 +153,29 @@ describe('GeminiClient', () => {
       body: expect.stringContaining('"input"')
     }));
   });
+
+  it('cancels the active Zotero HTTP request when the abort signal fires', async () => {
+    const cancel = vi.fn();
+    const request = vi.fn((_method: string, _url: string, options: Record<string, unknown>) => {
+      return new Promise<XMLHttpRequest>((_resolve, reject) => {
+        (options.cancellerReceiver as (callback: () => void) => void)(() => {
+          cancel();
+          reject(new Error('request cancelled'));
+        });
+      });
+    });
+    const client = new GeminiClient(request);
+    const abortController = new AbortController();
+
+    const pending = client.generateJson(
+      config,
+      [{ role: 'user', content: 'JSON only' }],
+      0.1,
+      abortController.signal
+    );
+    abortController.abort();
+
+    expect(cancel).toHaveBeenCalledOnce();
+    await expect(pending).rejects.toThrow('生成已取消');
+  });
 });

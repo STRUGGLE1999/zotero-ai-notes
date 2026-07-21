@@ -1,6 +1,6 @@
 import type { ProviderConfig } from '../config/settings';
 import type { EvidenceDebugData, EvidenceUnit } from '../evidence/evidence-builder';
-import { GeminiClient } from './gemini-client';
+import { GeminiClient, isRequestCancelled, RequestCancelledError } from './gemini-client';
 
 export interface FocusTopic {
   id: string;
@@ -93,12 +93,99 @@ export interface NotePipelineResult {
   validation: ValidationResult;
 }
 
+export type NotePipelineStageId = 'outline' | 'note' | 'review' | 'revision' | 'rereview';
+
+export type NotePipelineStageStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'skipped'
+  | 'failed'
+  | 'cancelled';
+
+export interface NotePipelineStageReport {
+  id: NotePipelineStageId;
+  label: NotePipelineStage;
+  status: NotePipelineStageStatus;
+  durationMs: number;
+  callCount: number;
+  failureReason?: string;
+}
+
+export interface NotePipelineReport {
+  stages: NotePipelineStageReport[];
+  callCount: number;
+  durationMs: number;
+  currentStage: NotePipelineStageId | null;
+  failureReason?: string;
+  cancelled: boolean;
+}
+
+export interface NotePipelineCheckpoint {
+  focusTopics: FocusTopic[];
+  outline?: OutlineResult;
+  note?: GeneratedNote;
+  review?: ReviewResult;
+  validation?: ValidationResult;
+  nextStage: NotePipelineStageId;
+  stages: NotePipelineStageReport[];
+  callCount: number;
+  durationMs: number;
+}
+
+export interface NotePipelineOptions {
+  checkpoint?: NotePipelineCheckpoint;
+  signal?: AbortSignal;
+}
+
 export type NotePipelineStage =
   | '正在规划笔记结构…'
   | '正在生成 Markdown 笔记…'
   | '正在审查内容与原文依据…'
   | '审查发现问题，正在自动修订…'
   | '正在复核修订结果…';
+
+const STAGE_LABELS: Record<NotePipelineStageId, NotePipelineStage> = {
+  outline: '正在规划笔记结构…',
+  note: '正在生成 Markdown 笔记…',
+  review: '正在审查内容与原文依据…',
+  revision: '审查发现问题，正在自动修订…',
+  rereview: '正在复核修订结果…'
+};
+
+function createStageReports(): NotePipelineStageReport[] {
+  return (Object.keys(STAGE_LABELS) as NotePipelineStageId[]).map(id => ({
+    id,
+    label: STAGE_LABELS[id],
+    status: 'pending',
+    durationMs: 0,
+    callCount: 0
+  }));
+}
+
+export function createNotePipelineCheckpoint(focusTopics: FocusTopic[]): NotePipelineCheckpoint {
+  return {
+    focusTopics,
+    nextStage: 'outline',
+    stages: createStageReports(),
+    callCount: 0,
+    durationMs: 0
+  };
+}
+
+export function notePipelineReport(checkpoint: NotePipelineCheckpoint): NotePipelineReport {
+  const current = checkpoint.stages.find(stage =>
+    stage.status === 'running' || stage.status === 'failed' || stage.status === 'cancelled'
+  );
+  return {
+    stages: checkpoint.stages.map(stage => ({ ...stage })),
+    callCount: checkpoint.callCount,
+    durationMs: checkpoint.durationMs,
+    currentStage: current?.id || null,
+    failureReason: current?.failureReason,
+    cancelled: current?.status === 'cancelled'
+  };
+}
 
 interface RawFocusTopic {
   id?: unknown;
@@ -435,7 +522,8 @@ export function stripInternalEvidenceIds(markdown: string): string {
 export async function identifyFocusTopics(
   config: ProviderConfig,
   data: EvidenceDebugData,
-  client = new GeminiClient()
+  client = new GeminiClient(),
+  signal?: AbortSignal
 ): Promise<FocusResult> {
   const messages: Array<{ role: 'system' | 'user'; content: string }> = [
     {
@@ -473,10 +561,13 @@ export async function identifyFocusTopics(
       })
     }
   ];
-  const raw = await client.generateJson<RawFocusResult>(config, messages);
+  const raw = await client.generateJson<RawFocusResult>(config, messages, 0.1, signal);
   try {
     return normalizeFocusResult(raw, data);
   } catch (error) {
+    if (signal?.aborted || isRequestCancelled(error)) {
+      throw new RequestCancelledError();
+    }
     const reason = error instanceof Error ? error.message : String(error);
     const corrected = await client.generateJson<RawFocusResult>(config, [
       {
@@ -500,7 +591,7 @@ export async function identifyFocusTopics(
           }
         })
       }
-    ]);
+    ], 0.1, signal);
     return normalizeFocusResult(corrected, data);
   }
 }
@@ -510,7 +601,8 @@ async function generateOutline(
   data: EvidenceDebugData,
   focusTopics: FocusTopic[],
   extraRequirement: string,
-  client: GeminiClient
+  client: GeminiClient,
+  signal?: AbortSignal
 ): Promise<OutlineResult> {
   const raw = await client.generateJson<RawOutlineResult>(config, [
     {
@@ -538,7 +630,7 @@ async function generateOutline(
         }
       })
     }
-  ]);
+  ], 0.1, signal);
   return normalizeOutlineResult(raw, data);
 }
 
@@ -549,7 +641,8 @@ async function generateNaturalNote(
   outline: OutlineResult,
   extraRequirement: string,
   client: GeminiClient,
-  correction?: { errors: string[]; review: ReviewResult }
+  correction?: { errors: string[]; review: ReviewResult },
+  signal?: AbortSignal
 ): Promise<GeneratedNote> {
   const raw = await client.generateJson<RawGeneratedNote>(config, [
     {
@@ -585,7 +678,7 @@ async function generateNaturalNote(
         }
       })
     }
-  ], 0.2);
+  ], 0.2, signal);
   return normalizeGeneratedNote(raw);
 }
 
@@ -593,7 +686,8 @@ async function reviewNote(
   config: ProviderConfig,
   data: EvidenceDebugData,
   note: GeneratedNote,
-  client: GeminiClient
+  client: GeminiClient,
+  signal?: AbortSignal
 ): Promise<ReviewResult> {
   const raw = await client.generateJson<RawReviewResult>(config, [
     {
@@ -617,7 +711,7 @@ async function reviewNote(
         }
       })
     }
-  ]);
+  ], 0.1, signal);
   return normalizeReviewResult(raw);
 }
 
@@ -627,8 +721,9 @@ export async function generateValidatedNote(
   allFocusTopics: FocusTopic[],
   selectedFocus: SelectedFocus[],
   extraRequirement: string,
-  onProgress?: (stage: NotePipelineStage) => void,
-  client = new GeminiClient()
+  onProgress?: (stage: NotePipelineStage, report: NotePipelineReport) => void,
+  client = new GeminiClient(),
+  options: NotePipelineOptions = {}
 ): Promise<NotePipelineResult> {
   const selectedMap = new Map(selectedFocus.map(item => [item.id, item.priority]));
   const focusTopics = allFocusTopics
@@ -639,26 +734,114 @@ export async function generateValidatedNote(
     throw new Error('请至少选择一个关注重点，或填写本次特别关注的问题。');
   }
 
-  onProgress?.('正在规划笔记结构…');
-  const outline = await generateOutline(config, data, focusTopics, extraRequirement, client);
-  onProgress?.('正在生成 Markdown 笔记…');
-  let note = await generateNaturalNote(config, data, focusTopics, outline, extraRequirement, client);
-  onProgress?.('正在审查内容与原文依据…');
-  let review = await reviewNote(config, data, note, client);
-  let validation = combineValidation(note, data, review);
+  const checkpoint = options.checkpoint || createNotePipelineCheckpoint(focusTopics);
+  checkpoint.focusTopics = focusTopics;
+  const reportProgress = (stage: NotePipelineStage) => {
+    onProgress?.(stage, notePipelineReport(checkpoint));
+  };
+  const runStage = async <T>(id: NotePipelineStageId, task: () => Promise<T>): Promise<T> => {
+    const stage = checkpoint.stages.find(item => item.id === id)!;
+    stage.status = 'running';
+    stage.failureReason = undefined;
+    stage.callCount += 1;
+    checkpoint.callCount += 1;
+    reportProgress(stage.label);
+    const startedAt = Date.now();
+    try {
+      const result = await task();
+      const elapsed = Date.now() - startedAt;
+      stage.durationMs += elapsed;
+      checkpoint.durationMs += elapsed;
+      stage.status = 'completed';
+      reportProgress(stage.label);
+      return result;
+    } catch (error) {
+      const elapsed = Date.now() - startedAt;
+      stage.durationMs += elapsed;
+      checkpoint.durationMs += elapsed;
+      const cancelled = options.signal?.aborted || isRequestCancelled(error);
+      stage.status = cancelled ? 'cancelled' : 'failed';
+      stage.failureReason = cancelled
+        ? '用户已取消生成。'
+        : error instanceof Error ? error.message : String(error);
+      reportProgress(stage.label);
+      if (cancelled) throw new RequestCancelledError();
+      throw error;
+    }
+  };
 
-  if (!validation.valid) {
-    onProgress?.('审查发现问题，正在自动修订…');
-    note = await generateNaturalNote(config, data, focusTopics, outline, extraRequirement, client, {
-      errors: validation.errors,
-      review
-    });
-    onProgress?.('正在复核修订结果…');
-    review = await reviewNote(config, data, note, client);
-    validation = combineValidation(note, data, review);
+  while (true) {
+    switch (checkpoint.nextStage) {
+      case 'outline':
+        checkpoint.outline = await runStage('outline', () => generateOutline(
+          config, data, focusTopics, extraRequirement, client, options.signal
+        ));
+        checkpoint.nextStage = 'note';
+        break;
+      case 'note':
+        checkpoint.note = await runStage('note', () => generateNaturalNote(
+          config,
+          data,
+          focusTopics,
+          checkpoint.outline!,
+          extraRequirement,
+          client,
+          undefined,
+          options.signal
+        ));
+        checkpoint.nextStage = 'review';
+        break;
+      case 'review':
+        checkpoint.review = await runStage('review', () => reviewNote(
+          config, data, checkpoint.note!, client, options.signal
+        ));
+        checkpoint.validation = combineValidation(checkpoint.note!, data, checkpoint.review);
+        if (checkpoint.validation.valid) {
+          for (const stage of checkpoint.stages.filter(item =>
+            item.id === 'revision' || item.id === 'rereview'
+          )) {
+            stage.status = 'skipped';
+          }
+          return {
+            focusTopics,
+            outline: checkpoint.outline!,
+            note: checkpoint.note!,
+            validation: checkpoint.validation
+          };
+        }
+        checkpoint.nextStage = 'revision';
+        break;
+      case 'revision': {
+        const correction = {
+          errors: checkpoint.validation!.errors,
+          review: checkpoint.review!
+        };
+        checkpoint.note = await runStage('revision', () => generateNaturalNote(
+          config,
+          data,
+          focusTopics,
+          checkpoint.outline!,
+          extraRequirement,
+          client,
+          correction,
+          options.signal
+        ));
+        checkpoint.nextStage = 'rereview';
+        break;
+      }
+      case 'rereview':
+        checkpoint.review = await runStage('rereview', () => reviewNote(
+          config, data, checkpoint.note!, client, options.signal
+        ));
+        checkpoint.validation = combineValidation(checkpoint.note!, data, checkpoint.review);
+        return {
+          focusTopics,
+          outline: checkpoint.outline!,
+          note: checkpoint.note!,
+          validation: checkpoint.validation
+        };
+    }
   }
-
-  return { focusTopics, outline, note, validation };
 }
 
 export async function auditEditedMarkdown(

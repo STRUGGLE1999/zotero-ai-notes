@@ -4,6 +4,7 @@ import type { EvidenceDebugData } from '../src/evidence/evidence-builder';
 import {
   generateValidatedNote,
   identifyFocusTopics,
+  createNotePipelineCheckpoint,
   stripInternalEvidenceIds,
   type FocusTopic
 } from '../src/llm/note-pipeline';
@@ -226,8 +227,94 @@ describe('note pipeline', () => {
 
     expect(progress.mock.calls.map(call => call[0])).toEqual([
       '正在规划笔记结构…',
+      '正在规划笔记结构…',
       '正在生成 Markdown 笔记…',
+      '正在生成 Markdown 笔记…',
+      '正在审查内容与原文依据…',
       '正在审查内容与原文依据…'
     ]);
+    const finalReport = progress.mock.calls.at(-1)?.[1];
+    expect(finalReport.callCount).toBe(3);
+    expect(finalReport.stages.slice(0, 3).map((stage: { status: string }) => stage.status))
+      .toEqual(['completed', 'completed', 'completed']);
+  });
+
+  it('retries from the failed review and preserves the completed outline and note', async () => {
+    const reviewFailure = new Error('审查服务暂时不可用');
+    const responses: unknown[] = [outlineResponse, validNoteResponse, reviewFailure, supportedReview];
+    const client = {
+      generateJson: vi.fn(async () => {
+        const response = responses.shift();
+        if (response instanceof Error) throw response;
+        return response;
+      })
+    };
+    const checkpoint = createNotePipelineCheckpoint([focus]);
+
+    await expect(generateValidatedNote(
+      config,
+      data,
+      [focus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never,
+      { checkpoint }
+    )).rejects.toThrow('审查服务暂时不可用');
+
+    expect(checkpoint.nextStage).toBe('review');
+    expect(checkpoint.outline).toBeDefined();
+    expect(checkpoint.note?.markdownNote).toContain('2015');
+    expect(checkpoint.stages.find(stage => stage.id === 'review')?.status).toBe('failed');
+
+    const result = await generateValidatedNote(
+      config,
+      data,
+      [focus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never,
+      { checkpoint }
+    );
+
+    expect(result.validation.valid).toBe(true);
+    expect(client.generateJson).toHaveBeenCalledTimes(4);
+    expect(checkpoint.stages.find(stage => stage.id === 'outline')?.callCount).toBe(1);
+    expect(checkpoint.stages.find(stage => stage.id === 'note')?.callCount).toBe(1);
+    expect(checkpoint.stages.find(stage => stage.id === 'review')?.callCount).toBe(2);
+    expect(checkpoint.callCount).toBe(4);
+  });
+
+  it('marks the current stage as cancelled and keeps it available for retry', async () => {
+    const abortController = new AbortController();
+    const client = {
+      generateJson: vi.fn(
+        (_config, _messages, _temperature, signal: AbortSignal) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(new Error('request cancelled')), {
+              once: true
+            });
+          })
+      )
+    };
+    const checkpoint = createNotePipelineCheckpoint([focus]);
+    const pending = generateValidatedNote(
+      config,
+      data,
+      [focus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never,
+      { checkpoint, signal: abortController.signal }
+    );
+
+    abortController.abort();
+
+    await expect(pending).rejects.toThrow('生成已取消');
+    expect(checkpoint.nextStage).toBe('outline');
+    expect(checkpoint.stages[0].status).toBe('cancelled');
+    expect(checkpoint.stages[0].failureReason).toBe('用户已取消生成。');
   });
 });

@@ -3,6 +3,7 @@ var ZoteroAINotes_Preview = {
   valid: false,
   dirty: false,
   busy: false,
+  cancellable: false,
   mindmap: null,
 
   async init() {
@@ -31,6 +32,10 @@ var ZoteroAINotes_Preview = {
     this.focusWarnings = document.getElementById('focus-warnings');
     this.extraRequirement = document.getElementById('extra-requirement');
     this.generateButton = document.getElementById('generate-button');
+    this.generationDetails = document.getElementById('generation-details');
+    this.generationSummary = document.getElementById('generation-summary');
+    this.generationStages = document.getElementById('generation-stages');
+    this.generationFailure = document.getElementById('generation-failure');
     this.validateButton = document.getElementById('validate-button');
     this.editor = document.getElementById('markdown-editor');
     this.preview = document.getElementById('rendered-preview');
@@ -49,6 +54,7 @@ var ZoteroAINotes_Preview = {
     this.saveButton = document.getElementById('save-button');
     this.exportButton = document.getElementById('export-button');
     this.exportMindmapButton = document.getElementById('export-mindmap-button');
+    this.cancelButton = document.getElementById('cancel-button');
   },
 
   bindEvents() {
@@ -61,8 +67,12 @@ var ZoteroAINotes_Preview = {
     this.noteTab.addEventListener('click', () => this.showPreview('note'));
     this.mindmapTab.addEventListener('click', () => this.showPreview('mindmap'));
     this.copyMindmapButton.addEventListener('click', () => this.copyMindmap());
-    document.getElementById('cancel-button').addEventListener('click', () => window.close());
-    document.getElementById('close-button').addEventListener('click', () => window.close());
+    this.cancelButton.addEventListener('click', () => this.cancelOrClose());
+    document.getElementById('close-button').addEventListener('click', () => {
+      this.controller?.cancelActiveRequest();
+      window.close();
+    });
+    window.addEventListener('beforeunload', () => this.controller?.cancelActiveRequest());
     this.editor.addEventListener('input', () => {
       this.render();
       this.dirty = true;
@@ -82,7 +92,7 @@ var ZoteroAINotes_Preview = {
     this.retryFocusButton.hidden = true;
     this.focusWarnings.textContent = '';
     this.generateButton.disabled = true;
-    this.setBusy(true, '正在识别关注重点…');
+    this.setBusy(true, '正在识别关注重点…', true);
     try {
       const result = await this.controller.identifyFocus();
       this.focusLoading.hidden = true;
@@ -151,14 +161,18 @@ var ZoteroAINotes_Preview = {
   async generate() {
     if (this.busy) return;
     this.actionMessage.textContent = '';
-    this.setBusy(true, '正在规划、生成并执行后台审查…');
+    this.setBusy(true, '正在规划、生成并执行后台审查…', true);
     this.generateButton.textContent = '正在生成…';
     try {
       const result = await this.controller.generate(
         this.selectedFocus(),
         this.extraRequirement.value.trim(),
-        stage => this.setGlobalStatus(stage, 'neutral')
+        (stage, report) => {
+          this.setGlobalStatus(stage, 'neutral');
+          this.renderGenerationReport(report);
+        }
       );
+      this.renderGenerationReport(this.controller.getGenerationState().report);
       this.editor.value = result.note.markdownNote;
       this.render();
       this.dirty = false;
@@ -167,15 +181,90 @@ var ZoteroAINotes_Preview = {
       this.setGlobalStatus(result.validation.valid ? '生成并校验通过' : '需要复核',
         result.validation.valid ? 'success' : 'warning');
     } catch (error) {
-      this.actionMessage.textContent = this.errorMessage(error);
+      const state = this.controller.getGenerationState();
+      this.renderGenerationReport(state.report);
+      if (state.noteMarkdown) {
+        this.editor.value = state.noteMarkdown;
+        this.render();
+        this.dirty = false;
+        this.valid = false;
+        this.validationSummary.textContent =
+          '已保留生成完成的笔记内容；当前结果尚未完成审查，请从失败阶段重试。';
+        this.validationSummary.className = 'validation warning';
+      }
+      const cancelled = state.report?.cancelled;
+      const preserved = state.noteMarkdown
+        ? '已保留生成完成的笔记内容。'
+        : state.hasOutline
+        ? '已保留生成完成的大纲。'
+        : '当前阶段可以重新尝试。';
+      this.actionMessage.textContent = cancelled
+        ? `生成已取消，${preserved}`
+        : `失败原因：${this.errorMessage(error)}`;
       this.actionMessage.className = 'action-message error';
-      this.setGlobalStatus('生成失败', 'error');
-      this.generateButton.textContent = '重新生成';
+      this.setGlobalStatus(cancelled ? '生成已取消' : '生成失败', 'error');
+      this.generateButton.textContent = state.canRetry ? '从当前阶段重试' : '重新生成';
     } finally {
       this.setBusy(false);
       this.generateButton.disabled = false;
       this.updateActions();
     }
+  },
+
+  cancelOrClose() {
+    if (this.busy && this.cancellable) {
+      this.controller.cancelActiveRequest();
+      this.cancelButton.disabled = true;
+      this.cancelButton.textContent = '正在取消…';
+      this.setGlobalStatus('正在取消当前请求…', 'warning');
+      return;
+    }
+    if (!this.busy) window.close();
+  },
+
+  renderGenerationReport(report) {
+    if (!report) return;
+    this.generationDetails.hidden = false;
+    this.generationSummary.textContent =
+      `本次已调用模型 ${report.callCount} 次 · 累计耗时 ${this.formatDuration(report.durationMs)}`;
+    this.generationStages.replaceChildren();
+    const icons = {
+      pending: '○', running: '◌', completed: '✓', skipped: '–', failed: '×', cancelled: '■'
+    };
+    const labels = {
+      outline: '规划笔记结构',
+      note: '生成 Markdown 笔记',
+      review: '审查内容与原文依据',
+      revision: '自动修订',
+      rereview: '复核修订结果'
+    };
+    for (const stage of report.stages) {
+      const row = document.createElementNS('http://www.w3.org/1999/xhtml', 'div');
+      row.className = `generation-stage ${stage.status}`;
+      const icon = document.createElementNS('http://www.w3.org/1999/xhtml', 'span');
+      icon.className = 'stage-icon';
+      icon.textContent = icons[stage.status];
+      const name = document.createElementNS('http://www.w3.org/1999/xhtml', 'span');
+      name.textContent = labels[stage.id];
+      const meta = document.createElementNS('http://www.w3.org/1999/xhtml', 'span');
+      meta.className = 'stage-meta';
+      meta.textContent = stage.status === 'skipped'
+        ? '无需执行'
+        : stage.callCount
+        ? `${this.formatDuration(stage.durationMs)} · ${stage.callCount} 次`
+        : '未开始';
+      row.append(icon, name, meta);
+      this.generationStages.append(row);
+    }
+    this.generationFailure.hidden = !report.failureReason;
+    this.generationFailure.textContent = report.failureReason
+      ? `失败原因：${report.failureReason}`
+      : '';
+  },
+
+  formatDuration(durationMs) {
+    if (durationMs < 1000) return `${durationMs} 毫秒`;
+    return `${(durationMs / 1000).toFixed(1)} 秒`;
   },
 
   render() {
@@ -387,8 +476,11 @@ var ZoteroAINotes_Preview = {
     }
   },
 
-  setBusy(value, message) {
+  setBusy(value, message, cancellable = false) {
     this.busy = value;
+    this.cancellable = value && cancellable;
+    this.cancelButton.textContent = this.cancellable ? '取消生成' : '关闭';
+    this.cancelButton.disabled = value && !this.cancellable;
     if (value && message) this.setGlobalStatus(message, 'neutral');
     this.updateActions();
   },
