@@ -2,7 +2,7 @@
 
 面向 Zotero 9 的 AI 论文批注整理插件。它会读取用户在 PDF 中留下的高亮、评论、标签和页码，结合批注附近的原文，生成经过后台校验的 Markdown 笔记，并进一步生成 Mermaid 思维导图。
 
-> 当前版本：`0.3.5`；已实机验证：macOS + Zotero `9.0.6`。
+> 当前版本：`0.3.7`；已实机验证：macOS + Zotero `9.0.6`。
 > Windows / Linux 使用同一套跨平台接口，仍需分别完成一次实机回归。
 
 ## 已实现功能
@@ -12,8 +12,10 @@
 - 获取高亮、评论、标签、颜色、页码及位置信息；
 - 只读取有批注的 PDF 页面，并定位高亮前后原文；
 - 建立内部 Evidence 数据，用于约束生成内容和后台校验；
-- 配置 Gemini Base URL、API Key 和模型，并测试连接；
+- 配置 Gemini、OpenAI 兼容、DeepSeek 或自定义服务的 Base URL、API Key 和模型，并测试连接；
 - 自动识别用户关注重点，允许勾选和调整优先级；
+- 显示规划、写作、审查、修订和复核阶段及其耗时、调用次数和失败原因；
+- 支持真正取消模型请求，并从失败或取消阶段继续重试，保留已完成结果；
 - 生成、编辑和预览自然 Markdown 笔记；
 - 后台检查 Evidence 引用、缺失内容和潜在幻觉；
 - 将结果写回为 Zotero 子笔记，或导出 UTF-8 Markdown；
@@ -28,8 +30,8 @@
 → 定位批注附近原文
 → 建立内部 Evidence
 → 识别用户关注重点
-→ Gemini 生成 Markdown
-→ 后台校验
+→ 所选模型规划并生成 Markdown
+→ 后台审查、必要时自动修订与复核
 → 用户预览与编辑
 → 写回 Zotero / 导出 Markdown
 → 生成 Mermaid 思维导图
@@ -44,8 +46,8 @@
 请先确认：
 
 - 已安装并至少启动过一次 Zotero 9；
-- macOS 可以正常访问 Gemini API；
-- 已准备 Gemini API Key；
+- macOS 可以正常访问准备使用的 AI 模型服务；
+- 已准备对应服务的 API Key、Base URL 和模型名称；
 - 如果手头没有现成的 XPI，需要安装 Node.js 18 或更高版本和 npm，从源码构建安装包。
 
 Zotero 版本可以从 macOS 顶部菜单“Zotero → 关于 Zotero”查看。
@@ -54,7 +56,7 @@ Zotero 版本可以从 macOS 顶部菜单“Zotero → 关于 Zotero”查看。
 
 #### 方式 A：从 GitHub Releases 下载（推荐）
 
-- [下载最新稳定版 0.3.5](https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.3.5/zotero-ai-notes-0.3.5.xpi)
+- [下载最新公开测试版 0.3.7](https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.3.7/zotero-ai-notes-0.3.7.xpi)
 - [查看并下载全部历史版本](https://github.com/STRUGGLE1999/zotero-ai-notes/releases)
 
 下载后直接进入下一步，不要解压 XPI 文件。如果浏览器尝试打开 `.xpi`，请右键下载链接并选择“链接另存为”。
@@ -73,7 +75,7 @@ npm run build
 构建成功后，可以在项目根目录看到：
 
 ```text
-zotero-ai-notes-0.3.5.xpi
+zotero-ai-notes-0.3.7.xpi
 ```
 
 如需在安装前完整检查安装包，可继续执行：
@@ -90,21 +92,22 @@ node scripts/verify-xpi.js
 2. 点击 macOS 顶部菜单“工具 → 插件”；
 3. 在插件管理器右上角点击齿轮按钮；
 4. 选择“Install Plugin From File…”或“从文件安装插件…”；
-5. 选择 `zotero-ai-notes-0.3.5.xpi`；
+5. 选择 `zotero-ai-notes-0.3.7.xpi`；
 6. 在确认窗口中允许安装；
-7. 检查插件列表中是否出现 `Zotero AI Notes 0.3.5`，并确认状态为启用。
+7. 检查插件列表中是否出现 `Zotero AI Notes 0.3.7`，并确认状态为启用。
 
 如果安装后右键菜单暂时没有出现，完全退出 Zotero，再重新打开一次。
 
-### 4. 配置 Gemini
+### 4. 配置 AI 模型
 
 1. 点击 macOS 顶部菜单“Zotero → 设置”；
 2. 打开“Zotero AI Notes”设置页；
 3. 填写以下内容：
 
-   - Base URL：`https://generativelanguage.googleapis.com/v1beta/openai/`
-   - API Key：从 Google AI Studio 获取的 Gemini API Key；
-   - 模型：例如 `gemini-3.1-flash-lite`，也可以填写当前 API Key 实际可用的模型名称。
+   - API 提供商：选择 Gemini、OpenAI 兼容、DeepSeek 或自定义 OpenAI 兼容服务；
+   - Base URL：填写服务商提供的 OpenAI 兼容接口地址；Gemini 官方示例为 `https://generativelanguage.googleapis.com/v1beta/openai/`；
+   - API Key：填写所选服务商提供的 Key；
+   - 模型：填写当前 API Key 实际可用的模型名称。
 
 4. 点击“保存”；
 5. 点击“测试连接”；
@@ -142,7 +145,7 @@ API Key 只保存在本机 Zotero/Firefox Login Manager 中。设置页不会回
 5. 取消不需要的主题，或调整主题优先级；
 6. 如有额外要求，可以在输入框中填写，例如“重点解释研究方法，不要扩展批注之外的内容”；
 7. 点击“生成笔记”；
-8. 等待 Gemini 返回结果并完成后台校验。
+8. 等待模型完成规划、笔记生成、审查以及必要的自动修订和复核。
 
 生成完成后，中间区域会显示可编辑的 Markdown，右侧会显示渲染后的笔记预览。正式内容不会显示插件内部使用的 Evidence ID。
 
@@ -162,13 +165,14 @@ API Key 只保存在本机 Zotero/Firefox Login Manager 中。设置页不会回
 
 使用新论文测试时，可以按下面的清单逐项确认：
 
-- [ ] Zotero 插件列表显示 `Zotero AI Notes 0.3.5` 且已启用；
+- [ ] Zotero 插件列表显示 `Zotero AI Notes 0.3.7` 且已启用；
 - [ ] 文献右键菜单只出现一个“AI 整理批注”；
 - [ ] 插件显示的论文标题正确；
 - [ ] PDF 数量和批注数量正确；
 - [ ] 大部分批注能够定位到附近原文；
 - [ ] 关注重点与自己的批注意图一致；
-- [ ] Gemini 成功返回 Markdown；
+- [ ] 所选模型成功返回 Markdown，阶段耗时和调用次数正常更新；
+- [ ] “取消生成”能中止当前请求，失败后能从当前阶段重试；
 - [ ] 后台校验通过，或明确显示需要补充的内容；
 - [ ] 正式笔记中没有类似 `E-XXXX-1-01` 的内部 Evidence ID；
 - [ ] “写回 Zotero”创建了新笔记，没有覆盖旧笔记；
@@ -197,12 +201,12 @@ API Key 只保存在本机 Zotero/Firefox Login Manager 中。设置页不会回
 - 返回文献列表后重新运行插件；
 - 确认当前选中的是包含该 PDF 的父条目或 PDF 本身。
 
-#### Gemini 连接失败
+#### 模型连接失败
 
 - 检查 API Key 是否保存成功；
-- 检查 Base URL 末尾是否包含 `/openai/`；
+- 检查 Base URL 是否与服务商提供的 OpenAI 兼容地址一致，并以 `/` 结尾；
 - 检查填写的模型是否对当前 API Key 可用；
-- 确认当前网络环境可以访问 Gemini API。
+- 确认当前网络环境可以访问所选模型服务的 API。
 
 #### 插件窗口没有出现在最前面
 
@@ -243,14 +247,14 @@ npm run build
 构建完成后，项目根目录会生成：
 
 ```text
-zotero-ai-notes-0.3.5.xpi
+zotero-ai-notes-0.3.7.xpi
 ```
 
 当前自动验证结果：
 
 - TypeScript 类型检查通过；
 - ESLint 0 个错误；
-- 11 个测试文件、45 个测试全部通过；
+- 11 个测试文件、50 个测试全部通过；
 - XPI 结构与压缩包完整性检查通过。
 
 ## 项目结构
@@ -289,8 +293,18 @@ scripts/                构建及 XPI 验证脚本
 | `0.3.0` | Mermaid 思维导图、SVG 预览、源码复制和导出 |
 | `0.3.1` | 小窗口与 Windows 布局修复、多模型提供商、Markdown 预览和识别失败重试 |
 | `0.3.2`–`0.3.5` | 延长生成超时、细化进度、兼容 Chat Completions 与 Responses API 返回格式并自动回退 |
+| `0.3.6` | 生成阶段、耗时、调用次数、真正取消和从当前阶段重试 |
+| `0.3.7` | 修复 Zotero 沙箱取消机制导致的识别失败，并完善中英文数字单位校验 |
 
 详细变更见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 版本与发布策略
+
+项目采用语义化版本。补丁版本用于缺陷和兼容性修复，次版本用于一组完整的新能力，`1.0.0` 留给完成跨平台回归、兼容策略和稳定性验收后的首个稳定版。版本号不是小数，例如 `0.10.0` 晚于 `0.9.0`。
+
+GitHub Releases 只发布值得用户集中下载的版本：新的次版本或主版本、重要功能里程碑、修复无法安装/启动/生成/数据安全问题的关键补丁，以及明确面向用户的公开测试版。内部测试版和普通小修复可以只保留在代码与 CHANGELOG 中，不必逐个创建 Release。跨平台稳定版门槛达成前，`0.x` Release 默认标记为 Pre-release。
+
+`0.3.7` 合并了 `0.3.6` 的生成流程优化，并修复了导致 Zotero 中无法识别关注重点的阻断问题，因此作为关键补丁发布。更完整的规则见 [AGENTS.md](AGENTS.md)。
 
 ## 后续计划
 

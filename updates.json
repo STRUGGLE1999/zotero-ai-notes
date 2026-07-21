@@ -3,9 +3,9 @@
     "zotero-ai-notes@example.com": {
       "updates": [
         {
-          "version": "0.3.5",
-          "update_link": "https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.3.5/zotero-ai-notes-0.3.5.xpi",
-          "update_hash": "sha256:474dcf8ae016e4e82eae5541f7463ad1928909707dffeb439087031d0f95164d",
+          "version": "0.3.7",
+          "update_link": "https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.3.7/zotero-ai-notes-0.3.7.xpi",
+          "update_hash": "sha256:8a4736145eb0d38197071a2078f79c487f5ae00a91e6b923afab97c610457330",
           "applications": {
             "zotero": {
               "strict_min_version": "9.0",
