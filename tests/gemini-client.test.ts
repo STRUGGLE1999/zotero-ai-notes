@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GeminiClient } from '../src/llm/gemini-client';
+import { GeminiClient, RequestCancellationController } from '../src/llm/gemini-client';
 import type { ProviderConfig } from '../src/config/settings';
 
 const config: ProviderConfig = {
@@ -165,7 +165,7 @@ describe('GeminiClient', () => {
       });
     });
     const client = new GeminiClient(request);
-    const abortController = new AbortController();
+    const abortController = new RequestCancellationController();
 
     const pending = client.generateJson(
       config,
@@ -177,5 +177,18 @@ describe('GeminiClient', () => {
 
     expect(cancel).toHaveBeenCalledOnce();
     await expect(pending).rejects.toThrow('生成已取消');
+  });
+
+  it('provides cancellation without relying on the browser AbortController global', () => {
+    vi.stubGlobal('AbortController', undefined);
+
+    const controller = new RequestCancellationController();
+    const listener = vi.fn();
+    controller.signal.subscribe(listener);
+    controller.abort();
+
+    expect(controller.signal.aborted).toBe(true);
+    expect(listener).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
   });
 });

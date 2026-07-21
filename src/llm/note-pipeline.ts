@@ -1,6 +1,11 @@
 import type { ProviderConfig } from '../config/settings';
 import type { EvidenceDebugData, EvidenceUnit } from '../evidence/evidence-builder';
-import { GeminiClient, isRequestCancelled, RequestCancelledError } from './gemini-client';
+import {
+  GeminiClient,
+  isRequestCancelled,
+  RequestCancelledError,
+  type RequestCancellationSignal
+} from './gemini-client';
 
 export interface FocusTopic {
   id: string;
@@ -135,7 +140,7 @@ export interface NotePipelineCheckpoint {
 
 export interface NotePipelineOptions {
   checkpoint?: NotePipelineCheckpoint;
-  signal?: AbortSignal;
+  signal?: RequestCancellationSignal;
 }
 
 export type NotePipelineStage =
@@ -437,8 +442,28 @@ function validateOutline(outline: OutlineResult, data: EvidenceDebugData) {
   }
 }
 
-function extractNumbers(text: string): string[] {
-  return [...new Set(text.match(/\b\d+(?:\.\d+)?%?\b/g) || [])];
+function extractNumbers(text: string): Array<{ raw: string; normalized: string }> {
+  const scaleByUnit: Record<string, number> = {
+    '万': 10_000,
+    '亿': 100_000_000,
+    thousand: 1_000,
+    million: 1_000_000,
+    billion: 1_000_000_000
+  };
+  const claims = [...text.matchAll(/\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g)]
+    .map(match => {
+      const value = Number(match[0].replace(/,/g, ''));
+      const tail = text.slice((match.index || 0) + match[0].length);
+      const unit = tail.match(/^\s*(%|％|万|亿|thousand|million|billion)(?![a-z])/i)?.[1];
+      if (unit === '%' || unit === '％') {
+        return { raw: `${match[0]}${unit}`, normalized: `percent:${value}` };
+      }
+      const scale = unit ? scaleByUnit[unit.toLowerCase()] : 1;
+      return { raw: `${match[0]}${unit || ''}`, normalized: `number:${value * scale}` };
+    });
+  return claims.filter((claim, index) =>
+    claims.findIndex(item => item.normalized === claim.normalized) === index
+  );
 }
 
 function staticValidation(note: GeneratedNote, data: EvidenceDebugData): { errors: string[]; warnings: string[] } {
@@ -469,8 +494,10 @@ function staticValidation(note: GeneratedNote, data: EvidenceDebugData): { error
         return `${unit.text} ${unit.annotationText} ${unit.userComment}`;
       })
       .join(' ');
+    const evidenceNumbers = new Set(extractNumbers(evidenceText).map(number => number.normalized));
     const unsupportedNumbers = extractNumbers(mapping.generatedText)
-      .filter(number => !evidenceText.includes(number));
+      .filter(number => !evidenceNumbers.has(number.normalized))
+      .map(number => number.raw);
     if (unsupportedNumbers.length) {
       errors.push(`内容映射 ${mapping.id} 含证据中不存在的数字：${unsupportedNumbers.join(', ')}`);
     }
@@ -523,7 +550,7 @@ export async function identifyFocusTopics(
   config: ProviderConfig,
   data: EvidenceDebugData,
   client = new GeminiClient(),
-  signal?: AbortSignal
+  signal?: RequestCancellationSignal
 ): Promise<FocusResult> {
   const messages: Array<{ role: 'system' | 'user'; content: string }> = [
     {
@@ -602,7 +629,7 @@ async function generateOutline(
   focusTopics: FocusTopic[],
   extraRequirement: string,
   client: GeminiClient,
-  signal?: AbortSignal
+  signal?: RequestCancellationSignal
 ): Promise<OutlineResult> {
   const raw = await client.generateJson<RawOutlineResult>(config, [
     {
@@ -642,7 +669,7 @@ async function generateNaturalNote(
   extraRequirement: string,
   client: GeminiClient,
   correction?: { errors: string[]; review: ReviewResult },
-  signal?: AbortSignal
+  signal?: RequestCancellationSignal
 ): Promise<GeneratedNote> {
   const raw = await client.generateJson<RawGeneratedNote>(config, [
     {
@@ -687,7 +714,7 @@ async function reviewNote(
   data: EvidenceDebugData,
   note: GeneratedNote,
   client: GeminiClient,
-  signal?: AbortSignal
+  signal?: RequestCancellationSignal
 ): Promise<ReviewResult> {
   const raw = await client.generateJson<RawReviewResult>(config, [
     {

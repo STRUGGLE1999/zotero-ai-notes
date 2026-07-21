@@ -51,6 +51,40 @@ export type HttpRequest = (
   options: Record<string, unknown>
 ) => Promise<XMLHttpRequest>;
 
+export interface RequestCancellationSignal {
+  readonly aborted: boolean;
+  subscribe(listener: () => void): () => void;
+}
+
+class RequestCancellationSignalImpl implements RequestCancellationSignal {
+  aborted = false;
+  private listeners = new Set<() => void>();
+
+  subscribe(listener: () => void): () => void {
+    if (this.aborted) {
+      listener();
+      return () => undefined;
+    }
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  abort() {
+    if (this.aborted) return;
+    this.aborted = true;
+    for (const listener of [...this.listeners]) listener();
+    this.listeners.clear();
+  }
+}
+
+export class RequestCancellationController {
+  readonly signal = new RequestCancellationSignalImpl();
+
+  abort() {
+    this.signal.abort();
+  }
+}
+
 export class RequestCancelledError extends Error {
   constructor() {
     super('生成已取消。');
@@ -174,7 +208,7 @@ export class GeminiClient {
   async generateMarkdown(
     config: ProviderConfig,
     messages: ChatMessage[],
-    signal?: AbortSignal
+    signal?: RequestCancellationSignal
   ): Promise<string> {
     return this.requestContent(config, messages, 0.2, GENERATION_TIMEOUT_MS, undefined, signal);
   }
@@ -183,7 +217,7 @@ export class GeminiClient {
     config: ProviderConfig,
     messages: ChatMessage[],
     temperature = 0.1,
-    signal?: AbortSignal
+    signal?: RequestCancellationSignal
   ): Promise<T> {
     const content = await this.requestContent(
       config,
@@ -202,7 +236,7 @@ export class GeminiClient {
     temperature: number,
     timeout = GENERATION_TIMEOUT_MS,
     maxTokens?: number,
-    signal?: AbortSignal
+    signal?: RequestCancellationSignal
   ): Promise<string> {
     const chatXhr = await this.send('POST', `${config.baseURL}chat/completions`, config, {
       model: config.model,
@@ -239,14 +273,14 @@ export class GeminiClient {
     config: ProviderConfig,
     body?: unknown,
     timeout = GENERATION_TIMEOUT_MS,
-    signal?: AbortSignal
+    signal?: RequestCancellationSignal
   ): Promise<XMLHttpRequest> {
     if (signal?.aborted) {
       throw new RequestCancelledError();
     }
     let cancelRequest: (() => void) | undefined;
     const cancel = () => cancelRequest?.();
-    signal?.addEventListener('abort', cancel, { once: true });
+    const unsubscribe = signal?.subscribe(cancel);
     try {
       return await this.request(method, url, {
         headers: {
@@ -270,7 +304,7 @@ export class GeminiClient {
       }
       throw new Error(`${config.providerLabel} 请求失败：${safeErrorMessage(error, config.apiKey)}`);
     } finally {
-      signal?.removeEventListener('abort', cancel);
+      unsubscribe?.();
     }
   }
 }

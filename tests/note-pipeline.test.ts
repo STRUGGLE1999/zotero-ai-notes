@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ProviderConfig } from '../src/config/settings';
 import type { EvidenceDebugData } from '../src/evidence/evidence-builder';
+import { RequestCancellationController } from '../src/llm/gemini-client';
 import {
   generateValidatedNote,
   identifyFocusTopics,
@@ -210,6 +211,39 @@ describe('note pipeline', () => {
     expect(client.generateJson).toHaveBeenCalledTimes(5);
   });
 
+  it('accepts equivalent localized numeric units in generated text', async () => {
+    const localizedData: EvidenceDebugData = {
+      ...data,
+      evidenceUnits: [{
+        ...data.evidenceUnits[0],
+        text: 'ImageNet contains more than 15 million labeled images and the network has 60 million parameters.'
+      }]
+    };
+    const localizedNote = {
+      ...validNoteResponse,
+      markdown_note: '# 笔记\n\nImageNet 包含超过 1,500万张标注图像，网络有 6,000万个参数。',
+      content_mappings: [{
+        ...validNoteResponse.content_mappings[0],
+        generated_text: 'ImageNet 包含超过 1,500万张标注图像，网络有 6,000万个参数。'
+      }]
+    };
+    const responses = [outlineResponse, localizedNote, supportedReview];
+    const client = { generateJson: vi.fn(async () => responses.shift()) };
+
+    const result = await generateValidatedNote(
+      config,
+      localizedData,
+      [focus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never
+    );
+
+    expect(result.validation.valid).toBe(true);
+    expect(client.generateJson).toHaveBeenCalledTimes(3);
+  });
+
   it('reports each long-running generation stage', async () => {
     const responses = [outlineResponse, validNoteResponse, supportedReview];
     const client = { generateJson: vi.fn(async () => responses.shift()) };
@@ -287,14 +321,12 @@ describe('note pipeline', () => {
   });
 
   it('marks the current stage as cancelled and keeps it available for retry', async () => {
-    const abortController = new AbortController();
+    const abortController = new RequestCancellationController();
     const client = {
       generateJson: vi.fn(
-        (_config, _messages, _temperature, signal: AbortSignal) =>
+        (_config, _messages, _temperature, signal) =>
           new Promise((_resolve, reject) => {
-            signal.addEventListener('abort', () => reject(new Error('request cancelled')), {
-              once: true
-            });
+            signal.subscribe(() => reject(new Error('request cancelled')));
           })
       )
     };

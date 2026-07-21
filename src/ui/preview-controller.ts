@@ -1,5 +1,6 @@
 import type { ProviderConfig } from '../config/settings';
 import type { EvidenceDebugData } from '../evidence/evidence-builder';
+import { RequestCancellationController } from '../llm/gemini-client';
 import {
   auditEditedMarkdown,
   createNotePipelineCheckpoint,
@@ -24,7 +25,7 @@ import {
 export class PreviewController {
   private focusResult: FocusResult | null = null;
   private lastMarkdown = '';
-  private activeAbortController: AbortController | null = null;
+  private activeCancellationController: RequestCancellationController | null = null;
   private checkpoint: NotePipelineCheckpoint | null = null;
   private generationKey = '';
   private generationComplete = false;
@@ -47,17 +48,17 @@ export class PreviewController {
   }
 
   async identifyFocus() {
-    const abortController = this.beginRequest();
+    const cancellationController = this.beginRequest();
     try {
       this.focusResult = await identifyFocusTopics(
         this.config,
         this.data,
         undefined,
-        abortController.signal
+        cancellationController.signal
       );
       return this.focusResult;
     } finally {
-      this.finishRequest(abortController);
+      this.finishRequest(cancellationController);
     }
   }
 
@@ -83,7 +84,7 @@ export class PreviewController {
       this.generationKey = key;
       this.generationComplete = false;
     }
-    const abortController = this.beginRequest();
+    const cancellationController = this.beginRequest();
     try {
       const result = await generateValidatedNote(
         this.config,
@@ -93,18 +94,18 @@ export class PreviewController {
         extraRequirement,
         onProgress,
         undefined,
-        { checkpoint: this.checkpoint, signal: abortController.signal }
+        { checkpoint: this.checkpoint, signal: cancellationController.signal }
       );
       this.lastMarkdown = result.note.markdownNote;
       this.generationComplete = true;
       return result;
     } finally {
-      this.finishRequest(abortController);
+      this.finishRequest(cancellationController);
     }
   }
 
   cancelActiveRequest() {
-    this.activeAbortController?.abort();
+    this.activeCancellationController?.abort();
   }
 
   getGenerationState() {
@@ -179,18 +180,18 @@ export class PreviewController {
     };
   }
 
-  private beginRequest(): AbortController {
-    if (this.activeAbortController) {
+  private beginRequest(): RequestCancellationController {
+    if (this.activeCancellationController) {
       throw new Error('已有任务正在执行，请先取消或等待完成。');
     }
-    const controller = new AbortController();
-    this.activeAbortController = controller;
+    const controller = new RequestCancellationController();
+    this.activeCancellationController = controller;
     return controller;
   }
 
-  private finishRequest(controller: AbortController) {
-    if (this.activeAbortController === controller) {
-      this.activeAbortController = null;
+  private finishRequest(controller: RequestCancellationController) {
+    if (this.activeCancellationController === controller) {
+      this.activeCancellationController = null;
     }
   }
 }
