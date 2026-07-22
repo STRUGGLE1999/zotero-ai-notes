@@ -10,7 +10,7 @@
         xmlns:html="http://www.w3.org/1999/xhtml">
   <script src="preview.js"/>
 
-  <html:main class="app-shell">
+  <html:main id="app-shell" class="app-shell" data-stage="focus">
     <html:header class="app-header">
       <html:div>
         <html:h1>AI 整理批注</html:h1>
@@ -22,49 +22,72 @@
       </html:div>
     </html:header>
 
+    <html:div class="flow-steps" role="navigation" aria-label="生成进度">
+      <html:div id="step-focus" class="flow-step active"><html:span>1</html:span>确认关注重点</html:div>
+      <html:div id="step-generation" class="flow-step"><html:span>2</html:span>生成与审查</html:div>
+      <html:div id="step-result" class="flow-step"><html:span>3</html:span>查看与保存</html:div>
+    </html:div>
+
     <html:div class="workspace">
-      <html:section class="panel settings-panel">
-        <html:h2>1. 关注重点</html:h2>
-        <html:p class="hint">取消不需要的主题，或调整优先级后再生成。</html:p>
+      <html:section id="focus-stage" class="panel stage-panel focus-stage">
+        <html:h2>这次笔记要关注什么？</html:h2>
+        <html:p class="hint">勾选需要整理的主题；可将最多 2 个主题设为重点，笔记会优先并更详细地展开。</html:p>
         <html:div id="focus-loading" class="loading">正在根据批注识别关注重点…</html:div>
         <html:button id="retry-focus-button" hidden="hidden">重新识别关注重点</html:button>
         <html:div id="focus-list" class="focus-list"></html:div>
+        <html:div id="focus-selection-summary" class="selection-summary">正在识别主题…</html:div>
+        <html:div id="focus-notice" class="message-list"></html:div>
 
-        <html:label for="extra-requirement">本次补充要求</html:label>
-        <html:textarea id="extra-requirement" rows="5"
+        <html:label for="extra-requirement">本次补充要求（可选）</html:label>
+        <html:textarea id="extra-requirement" rows="4"
                        placeholder="例如：重点解释方法设计，不要扩展批注之外的产品结论。"></html:textarea>
 
         <html:button id="generate-button" class="primary" disabled="disabled">生成笔记</html:button>
-        <html:section id="generation-details" class="generation-details" hidden="hidden">
+        <html:div id="focus-warnings" class="message-list"></html:div>
+      </html:section>
+
+      <html:section id="generation-stage" class="panel stage-panel generation-stage-panel" hidden="hidden">
+        <html:div class="generation-heading">
+          <html:div class="generation-spinner" aria-hidden="true"></html:div>
+          <html:div>
+            <html:h2>正在整理笔记</html:h2>
+            <html:p class="hint">已完成的阶段会保留；失败或取消后可从当前阶段继续。</html:p>
+          </html:div>
+        </html:div>
+        <html:section id="generation-details" class="generation-details">
           <html:div id="generation-summary" class="generation-summary">尚未开始生成</html:div>
           <html:div id="generation-stages" class="generation-stages"></html:div>
           <html:div id="generation-failure" class="generation-failure" hidden="hidden"></html:div>
         </html:section>
-        <html:div id="focus-warnings" class="message-list"></html:div>
+        <html:button id="retry-generation-button" class="primary" hidden="hidden">从当前阶段重试</html:button>
       </html:section>
 
-      <html:section class="panel editor-panel">
+      <html:section id="result-stage" class="panel stage-panel result-stage" hidden="hidden">
         <html:div class="panel-title-row">
-          <html:h2>2. Markdown 编辑</html:h2>
-          <html:button id="validate-button" disabled="disabled">校验当前内容</html:button>
-        </html:div>
-        <html:textarea id="markdown-editor" spellcheck="false"
-                       placeholder="确认关注重点并生成后，Markdown 会显示在这里。"></html:textarea>
-      </html:section>
-
-      <html:section class="panel preview-panel">
-        <html:div class="panel-title-row">
-          <html:h2>3. 结果预览</html:h2>
-          <html:div class="preview-tabs">
-            <html:button id="note-tab" class="preview-tab active">笔记</html:button>
-            <html:button id="mindmap-tab" class="preview-tab" disabled="disabled">思维导图</html:button>
+          <html:div>
+            <html:h2>笔记整理完成</html:h2>
+            <html:div id="focus-result-summary" class="hint"></html:div>
           </html:div>
+          <html:button id="adjust-focus-button">重新调整重点</html:button>
+        </html:div>
+        <html:div class="preview-tabs result-tabs">
+          <html:button id="note-tab" class="preview-tab active">笔记预览</html:button>
+          <html:button id="editor-tab" class="preview-tab">Markdown 编辑</html:button>
+          <html:button id="mindmap-tab" class="preview-tab" disabled="disabled">思维导图</html:button>
         </html:div>
         <html:div id="validation-summary" class="validation neutral">尚未生成</html:div>
         <html:div id="note-preview-panel">
           <html:article id="rendered-preview" class="markdown-body">
             <html:p class="placeholder">正式笔记不会显示内部 Evidence ID。</html:p>
           </html:article>
+        </html:div>
+        <html:div id="editor-preview-panel" hidden="hidden">
+          <html:div class="editor-toolbar">
+            <html:span class="hint">修改后需重新校验，才能写回或导出。</html:span>
+            <html:button id="validate-button" disabled="disabled">校验当前内容</html:button>
+          </html:div>
+          <html:textarea id="markdown-editor" spellcheck="false"
+                         placeholder="生成后可在这里修改 Markdown。"></html:textarea>
         </html:div>
         <html:div id="mindmap-preview-panel" hidden="hidden">
           <html:div class="mindmap-toolbar">
@@ -82,7 +105,7 @@
     <html:footer class="app-footer">
       <html:div id="action-message" class="action-message"></html:div>
       <html:div class="footer-actions">
-        <html:button id="cancel-button">取消</html:button>
+        <html:button id="cancel-button" hidden="hidden">取消生成</html:button>
         <html:button id="export-mindmap-button" disabled="disabled">导出思维导图</html:button>
         <html:button id="export-button" disabled="disabled">导出 Markdown</html:button>
         <html:button id="save-button" class="primary" disabled="disabled">写回 Zotero</html:button>

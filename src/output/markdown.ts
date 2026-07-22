@@ -28,10 +28,28 @@ function renderInline(value: string): string {
   return rendered.replace(/%%ZAI_CODE_(\d+)%%/g, (_match, index: string) => code[Number(index)] || '');
 }
 
+function splitLongProse(value: string): string[] {
+  if (value.length < 220) return [value];
+  const sentences = value.match(/[^。！？]+[。！？]+|[^。！？]+$/g)
+    ?.map(sentence => sentence.trim())
+    .filter(Boolean) || [value];
+  if (sentences.length < 2) return [value];
+  const paragraphs: string[] = [];
+  let current = '';
+  for (const sentence of sentences) {
+    if (current && current.length + sentence.length > 220) {
+      paragraphs.push(current);
+      current = sentence;
+    } else {
+      current += sentence;
+    }
+  }
+  if (current) paragraphs.push(current);
+  return paragraphs;
+}
+
 export function markdownToSafeHtml(markdown: string): string {
-  const normalized = !markdown.includes('\n') && markdown.includes('\\n')
-    ? markdown.replace(/\\r\\n|\\n/g, '\n')
-    : markdown;
+  const normalized = markdown.replace(/\\r\\n|\\n/g, '\n');
   const lines = normalized.replace(/\r\n?/g, '\n').split('\n');
   const output: string[] = [];
   let inCode = false;
@@ -101,7 +119,9 @@ export function markdownToSafeHtml(markdown: string): string {
     } else if (/^---+$/.test(line.trim())) {
       output.push('<hr>');
     } else {
-      output.push(`<p>${renderInline(line.trim())}</p>`);
+      for (const paragraph of splitLongProse(line.trim())) {
+        output.push(`<p>${renderInline(paragraph)}</p>`);
+      }
     }
   }
 

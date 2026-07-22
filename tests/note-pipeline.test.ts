@@ -64,18 +64,6 @@ const focus: FocusTopic = {
   priority: 1
 };
 
-const outlineResponse = {
-  article_core: {
-    problem: '问题', method: '方法', conclusion: '结论', evidence_ids: ['E-PDF-1-01']
-  },
-  user_focus_relation: '关注方法',
-  outline: [{
-    id: 'S1', heading: '核心方法', purpose: '解释方法', source_plan: ['document'],
-    evidence_ids: ['E-PDF-1-01'], annotation_ids: ['A1'], questions_to_answer: []
-  }],
-  missing_information: [], conflicts: [], warnings: []
-};
-
 const validNoteResponse = {
   title: '自然笔记',
   markdown_note: '# 自然笔记\n\n方法在 2015 年得到改进 [E-PDF-1-01]。',
@@ -96,6 +84,11 @@ const supportedReview = {
     valid_evidence_ids: ['E-PDF-1-01'], invalid_evidence_ids: [], recommended_action: 'keep'
   }],
   overall_risk: 'low', warnings: []
+};
+
+const reviewedValidNote = {
+  final_note: validNoteResponse,
+  final_review: supportedReview
 };
 
 describe('note pipeline', () => {
@@ -152,7 +145,7 @@ describe('note pipeline', () => {
   });
 
   it('generates a natural note, validates mappings, and keeps IDs backstage', async () => {
-    const responses = [outlineResponse, validNoteResponse, supportedReview];
+    const responses = [validNoteResponse];
     const client = { generateJson: vi.fn(async () => responses.shift()) };
 
     const result = await generateValidatedNote(
@@ -168,10 +161,40 @@ describe('note pipeline', () => {
     expect(result.validation.valid).toBe(true);
     expect(result.note.markdownNote).not.toContain('E-PDF');
     expect(result.note.contentMappings[0].evidenceIds).toEqual(['E-PDF-1-01']);
-    expect(client.generateJson).toHaveBeenCalledTimes(3);
+    expect(client.generateJson).toHaveBeenCalledTimes(1);
+    expect(result.validation.warnings).toContain(
+      '未检测到需额外模型审查的风险信号，已跳过额外调用。'
+    );
   });
 
-  it('automatically revises once when a number is unsupported', async () => {
+  it('reviews and corrects an unsupported number without extra model rounds', async () => {
+    const invalidNote = {
+      ...validNoteResponse,
+      markdown_note: '# 笔记\n\n方法提升了 999%。',
+      content_mappings: [{
+        ...validNoteResponse.content_mappings[0],
+        generated_text: '方法提升了 999%。'
+      }]
+    };
+    const responses = [invalidNote, reviewedValidNote];
+    const client = { generateJson: vi.fn(async () => responses.shift()) };
+
+    const result = await generateValidatedNote(
+      config,
+      data,
+      [focus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never
+    );
+
+    expect(result.validation.valid).toBe(true);
+    expect(result.note.markdownNote).not.toContain('999');
+    expect(client.generateJson).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses only one fallback correction when the reviewed result is still invalid', async () => {
     const invalidNote = {
       ...validNoteResponse,
       markdown_note: '# 笔记\n\n方法提升了 999%。',
@@ -188,11 +211,9 @@ describe('note pipeline', () => {
       overall_risk: 'high', warnings: []
     };
     const responses = [
-      outlineResponse,
       invalidNote,
-      invalidReview,
-      validNoteResponse,
-      supportedReview
+      { final_note: invalidNote, final_review: invalidReview },
+      reviewedValidNote
     ];
     const client = { generateJson: vi.fn(async () => responses.shift()) };
 
@@ -208,7 +229,7 @@ describe('note pipeline', () => {
 
     expect(result.validation.valid).toBe(true);
     expect(result.note.markdownNote).not.toContain('999');
-    expect(client.generateJson).toHaveBeenCalledTimes(5);
+    expect(client.generateJson).toHaveBeenCalledTimes(3);
   });
 
   it('accepts equivalent localized numeric units in generated text', async () => {
@@ -227,7 +248,7 @@ describe('note pipeline', () => {
         generated_text: 'ImageNet 包含超过 1,500万张标注图像，网络有 6,000万个参数。'
       }]
     };
-    const responses = [outlineResponse, localizedNote, supportedReview];
+    const responses = [localizedNote];
     const client = { generateJson: vi.fn(async () => responses.shift()) };
 
     const result = await generateValidatedNote(
@@ -241,11 +262,11 @@ describe('note pipeline', () => {
     );
 
     expect(result.validation.valid).toBe(true);
-    expect(client.generateJson).toHaveBeenCalledTimes(3);
+    expect(client.generateJson).toHaveBeenCalledTimes(1);
   });
 
   it('reports each long-running generation stage', async () => {
-    const responses = [outlineResponse, validNoteResponse, supportedReview];
+    const responses = [validNoteResponse];
     const client = { generateJson: vi.fn(async () => responses.shift()) };
     const progress = vi.fn();
 
@@ -260,22 +281,28 @@ describe('note pipeline', () => {
     );
 
     expect(progress.mock.calls.map(call => call[0])).toEqual([
-      '正在规划笔记结构…',
-      '正在规划笔记结构…',
+      '正在本地整理笔记结构…',
+      '正在本地整理笔记结构…',
       '正在生成 Markdown 笔记…',
       '正在生成 Markdown 笔记…',
-      '正在审查内容与原文依据…',
-      '正在审查内容与原文依据…'
+      '正在审查并校正内容…'
     ]);
     const finalReport = progress.mock.calls.at(-1)?.[1];
-    expect(finalReport.callCount).toBe(3);
+    expect(finalReport.callCount).toBe(1);
     expect(finalReport.stages.slice(0, 3).map((stage: { status: string }) => stage.status))
-      .toEqual(['completed', 'completed', 'completed']);
+      .toEqual(['completed', 'completed', 'skipped']);
   });
 
   it('retries from the failed review and preserves the completed outline and note', async () => {
     const reviewFailure = new Error('审查服务暂时不可用');
-    const responses: unknown[] = [outlineResponse, validNoteResponse, reviewFailure, supportedReview];
+    const riskyNote = {
+      ...validNoteResponse,
+      content_mappings: [{
+        ...validNoteResponse.content_mappings[0],
+        confidence: 'medium'
+      }]
+    };
+    const responses: unknown[] = [riskyNote, reviewFailure, reviewedValidNote];
     const client = {
       generateJson: vi.fn(async () => {
         const response = responses.shift();
@@ -313,11 +340,11 @@ describe('note pipeline', () => {
     );
 
     expect(result.validation.valid).toBe(true);
-    expect(client.generateJson).toHaveBeenCalledTimes(4);
-    expect(checkpoint.stages.find(stage => stage.id === 'outline')?.callCount).toBe(1);
+    expect(client.generateJson).toHaveBeenCalledTimes(3);
+    expect(checkpoint.stages.find(stage => stage.id === 'outline')?.callCount).toBe(0);
     expect(checkpoint.stages.find(stage => stage.id === 'note')?.callCount).toBe(1);
     expect(checkpoint.stages.find(stage => stage.id === 'review')?.callCount).toBe(2);
-    expect(checkpoint.callCount).toBe(4);
+    expect(checkpoint.callCount).toBe(3);
   });
 
   it('marks the current stage as cancelled and keeps it available for retry', async () => {
@@ -345,8 +372,8 @@ describe('note pipeline', () => {
     abortController.abort();
 
     await expect(pending).rejects.toThrow('生成已取消');
-    expect(checkpoint.nextStage).toBe('outline');
-    expect(checkpoint.stages[0].status).toBe('cancelled');
-    expect(checkpoint.stages[0].failureReason).toBe('用户已取消生成。');
+    expect(checkpoint.nextStage).toBe('note');
+    expect(checkpoint.stages[1].status).toBe('cancelled');
+    expect(checkpoint.stages[1].failureReason).toBe('用户已取消生成。');
   });
 });

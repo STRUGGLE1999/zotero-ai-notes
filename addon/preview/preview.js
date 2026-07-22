@@ -5,6 +5,8 @@ var ZoteroAINotes_Preview = {
   busy: false,
   cancellable: false,
   mindmap: null,
+  flowStage: 'focus',
+  savedMarkdown: '',
 
   async init() {
     const payload = window.arguments?.[0]?.wrappedJSObject;
@@ -24,14 +26,23 @@ var ZoteroAINotes_Preview = {
   },
 
   cacheElements() {
+    this.appShell = document.getElementById('app-shell');
     this.documentSummary = document.getElementById('document-summary');
     this.globalStatus = document.getElementById('global-status');
     this.focusLoading = document.getElementById('focus-loading');
     this.retryFocusButton = document.getElementById('retry-focus-button');
     this.focusList = document.getElementById('focus-list');
     this.focusWarnings = document.getElementById('focus-warnings');
+    this.focusSelectionSummary = document.getElementById('focus-selection-summary');
+    this.focusNotice = document.getElementById('focus-notice');
+    this.focusResultSummary = document.getElementById('focus-result-summary');
     this.extraRequirement = document.getElementById('extra-requirement');
     this.generateButton = document.getElementById('generate-button');
+    this.retryGenerationButton = document.getElementById('retry-generation-button');
+    this.adjustFocusButton = document.getElementById('adjust-focus-button');
+    this.focusStage = document.getElementById('focus-stage');
+    this.generationStage = document.getElementById('generation-stage');
+    this.resultStage = document.getElementById('result-stage');
     this.generationDetails = document.getElementById('generation-details');
     this.generationSummary = document.getElementById('generation-summary');
     this.generationStages = document.getElementById('generation-stages');
@@ -40,8 +51,10 @@ var ZoteroAINotes_Preview = {
     this.editor = document.getElementById('markdown-editor');
     this.preview = document.getElementById('rendered-preview');
     this.notePreviewPanel = document.getElementById('note-preview-panel');
+    this.editorPreviewPanel = document.getElementById('editor-preview-panel');
     this.mindmapPreviewPanel = document.getElementById('mindmap-preview-panel');
     this.noteTab = document.getElementById('note-tab');
+    this.editorTab = document.getElementById('editor-tab');
     this.mindmapTab = document.getElementById('mindmap-tab');
     this.mindmapSummary = document.getElementById('mindmap-summary');
     this.mindmapSvg = document.getElementById('mindmap-svg');
@@ -55,16 +68,24 @@ var ZoteroAINotes_Preview = {
     this.exportButton = document.getElementById('export-button');
     this.exportMindmapButton = document.getElementById('export-mindmap-button');
     this.cancelButton = document.getElementById('cancel-button');
+    this.flowSteps = {
+      focus: document.getElementById('step-focus'),
+      generation: document.getElementById('step-generation'),
+      result: document.getElementById('step-result')
+    };
   },
 
   bindEvents() {
     this.generateButton.addEventListener('click', () => this.generate());
+    this.retryGenerationButton.addEventListener('click', () => this.generate());
+    this.adjustFocusButton.addEventListener('click', () => this.switchStage('focus'));
     this.retryFocusButton.addEventListener('click', () => this.loadFocusTopics());
     this.validateButton.addEventListener('click', () => this.validateEdited());
     this.saveButton.addEventListener('click', () => this.save());
     this.exportButton.addEventListener('click', () => this.export());
     this.exportMindmapButton.addEventListener('click', () => this.exportMindmap());
     this.noteTab.addEventListener('click', () => this.showPreview('note'));
+    this.editorTab.addEventListener('click', () => this.showPreview('editor'));
     this.mindmapTab.addEventListener('click', () => this.showPreview('mindmap'));
     this.copyMindmapButton.addEventListener('click', () => this.copyMindmap());
     this.cancelButton.addEventListener('click', () => this.cancelOrClose());
@@ -80,8 +101,10 @@ var ZoteroAINotes_Preview = {
       this.clearMindmap();
       this.validationSummary.textContent = '内容已修改，请重新执行后台校验后再保存或导出。';
       this.validationSummary.className = 'validation warning';
+      this.setGlobalStatus('内容已修改，等待重新校验', 'warning');
       this.updateActions();
     });
+    this.extraRequirement.addEventListener('input', () => this.updateFocusSelection());
   },
 
   async loadFocusTopics() {
@@ -98,7 +121,6 @@ var ZoteroAINotes_Preview = {
       this.focusLoading.hidden = true;
       this.focusWarnings.textContent = result.warnings.join('\n');
       this.renderFocusTopics(result.focusTopics);
-      this.generateButton.disabled = false;
       this.setGlobalStatus('请确认关注重点', 'success');
     } catch (error) {
       this.focusLoading.textContent = `识别失败原因：${this.errorMessage(error)}`;
@@ -107,6 +129,7 @@ var ZoteroAINotes_Preview = {
       this.setGlobalStatus('识别失败', 'error');
     } finally {
       this.setBusy(false);
+      this.updateFocusSelection();
     }
   },
 
@@ -122,6 +145,7 @@ var ZoteroAINotes_Preview = {
       checkbox.type = 'checkbox';
       checkbox.checked = true;
       checkbox.className = 'topic-enabled';
+      checkbox.setAttribute('aria-label', `选择主题：${topic.title}`);
 
       const content = html('div');
       const title = html('strong');
@@ -130,23 +154,53 @@ var ZoteroAINotes_Preview = {
       description.textContent = topic.description || topic.reason;
       content.append(title, description);
 
-      const priorityRow = html('div');
-      priorityRow.className = 'priority-row';
-      const label = html('span');
-      label.textContent = '优先级';
-      const select = html('select');
-      select.className = 'topic-priority';
-      for (let value = 1; value <= Math.max(3, topics.length); value++) {
-        const option = html('option');
-        option.value = String(value);
-        option.textContent = value === 1 ? '1（最高）' : String(value);
-        option.selected = value === topic.priority;
-        select.append(option);
-      }
-      priorityRow.append(label, select);
-      card.append(checkbox, content, priorityRow);
+      const emphasisButton = html('button');
+      emphasisButton.type = 'button';
+      emphasisButton.className = 'topic-emphasis';
+      emphasisButton.textContent = '☆ 设为重点';
+      emphasisButton.setAttribute('aria-pressed', 'false');
+      emphasisButton.addEventListener('click', () => this.toggleTopicEmphasis(card));
+      checkbox.addEventListener('change', () => {
+        if (!checkbox.checked) this.setTopicEmphasis(card, false);
+        this.updateFocusSelection();
+      });
+      card.append(checkbox, content, emphasisButton);
       this.focusList.append(card);
     }
+    this.updateFocusSelection();
+  },
+
+  toggleTopicEmphasis(card) {
+    const emphasized = card.classList.contains('emphasized');
+    if (!emphasized) {
+      const count = this.focusList.querySelectorAll('.focus-topic.emphasized').length;
+      if (count >= 2) {
+        this.focusNotice.textContent = '最多选择 2 个重点主题。请先取消一个已有重点。';
+        this.focusNotice.className = 'message-list warning';
+        return;
+      }
+      card.querySelector('.topic-enabled').checked = true;
+    }
+    this.setTopicEmphasis(card, !emphasized);
+    this.focusNotice.textContent = '';
+    this.updateFocusSelection();
+  },
+
+  setTopicEmphasis(card, emphasized) {
+    card.classList.toggle('emphasized', emphasized);
+    const button = card.querySelector('.topic-emphasis');
+    button.textContent = emphasized ? '★ 重点主题' : '☆ 设为重点';
+    button.setAttribute('aria-pressed', String(emphasized));
+  },
+
+  updateFocusSelection() {
+    const selectedCards = [...this.focusList.querySelectorAll('.focus-topic')]
+      .filter(card => card.querySelector('.topic-enabled').checked);
+    const emphasizedCount = selectedCards.filter(card => card.classList.contains('emphasized')).length;
+    this.focusSelectionSummary.textContent =
+      `已选择 ${selectedCards.length} 个主题 · ${emphasizedCount} 个重点`;
+    this.generateButton.disabled = this.busy ||
+      (!selectedCards.length && !this.extraRequirement.value.trim());
   },
 
   selectedFocus() {
@@ -154,14 +208,16 @@ var ZoteroAINotes_Preview = {
       .filter(card => card.querySelector('.topic-enabled').checked)
       .map(card => ({
         id: card.dataset.topicId,
-        priority: Number(card.querySelector('.topic-priority').value)
+        priority: card.classList.contains('emphasized') ? 1 : 2
       }));
   },
 
   async generate() {
     if (this.busy) return;
     this.actionMessage.textContent = '';
-    this.setBusy(true, '正在规划、生成并执行后台审查…', true);
+    this.retryGenerationButton.hidden = true;
+    this.switchStage('generation');
+    this.setBusy(true, '正在生成笔记并执行风险校验…', true);
     this.generateButton.textContent = '正在生成…';
     try {
       const result = await this.controller.generate(
@@ -176,8 +232,12 @@ var ZoteroAINotes_Preview = {
       this.editor.value = result.note.markdownNote;
       this.render();
       this.dirty = false;
+      this.savedMarkdown = '';
       this.applyValidation(result.validation);
       this.generateButton.textContent = '重新生成';
+      this.focusResultSummary.textContent = this.focusSelectionSummary.textContent;
+      this.switchStage('result');
+      this.showPreview('note');
       this.setGlobalStatus(result.validation.valid ? '生成并校验通过' : '需要复核',
         result.validation.valid ? 'success' : 'warning');
     } catch (error) {
@@ -204,9 +264,11 @@ var ZoteroAINotes_Preview = {
       this.actionMessage.className = 'action-message error';
       this.setGlobalStatus(cancelled ? '生成已取消' : '生成失败', 'error');
       this.generateButton.textContent = state.canRetry ? '从当前阶段重试' : '重新生成';
+      this.retryGenerationButton.textContent = this.generateButton.textContent;
+      this.retryGenerationButton.hidden = false;
     } finally {
       this.setBusy(false);
-      this.generateButton.disabled = false;
+      this.updateFocusSelection();
       this.updateActions();
     }
   },
@@ -219,7 +281,22 @@ var ZoteroAINotes_Preview = {
       this.setGlobalStatus('正在取消当前请求…', 'warning');
       return;
     }
-    if (!this.busy) window.close();
+  },
+
+  switchStage(stage) {
+    this.flowStage = stage;
+    this.appShell.dataset.stage = stage;
+    this.focusStage.hidden = stage !== 'focus';
+    this.generationStage.hidden = stage !== 'generation';
+    this.resultStage.hidden = stage !== 'result';
+    const order = ['focus', 'generation', 'result'];
+    const currentIndex = order.indexOf(stage);
+    for (const [name, element] of Object.entries(this.flowSteps)) {
+      const index = order.indexOf(name);
+      element.classList.toggle('active', name === stage);
+      element.classList.toggle('completed', index < currentIndex);
+    }
+    this.updateActions();
   },
 
   renderGenerationReport(report) {
@@ -232,11 +309,11 @@ var ZoteroAINotes_Preview = {
       pending: '○', running: '◌', completed: '✓', skipped: '–', failed: '×', cancelled: '■'
     };
     const labels = {
-      outline: '规划笔记结构',
+      outline: '整理笔记结构（本地）',
       note: '生成 Markdown 笔记',
-      review: '审查内容与原文依据',
-      revision: '自动修订',
-      rereview: '复核修订结果'
+      review: '风险触发时模型审查',
+      revision: '再次修订（仅必要时）',
+      rereview: '额外复核'
     };
     for (const stage of report.stages) {
       const row = document.createElementNS('http://www.w3.org/1999/xhtml', 'div');
@@ -250,6 +327,8 @@ var ZoteroAINotes_Preview = {
       meta.className = 'stage-meta';
       meta.textContent = stage.status === 'skipped'
         ? '无需执行'
+        : stage.status === 'completed' && !stage.callCount
+        ? `${this.formatDuration(stage.durationMs)} · 本地`
         : stage.callCount
         ? `${this.formatDuration(stage.durationMs)} · ${stage.callCount} 次`
         : '未开始';
@@ -268,8 +347,25 @@ var ZoteroAINotes_Preview = {
   },
 
   render() {
-    const html = this.controller.renderMarkdown(this.editor.value);
-    this.preview.innerHTML = html || '<p class="placeholder">暂无内容</p>';
+    const rendered = this.controller.renderMarkdown(this.editor.value);
+    if (!rendered) {
+      const placeholder = document.createElementNS(
+        'http://www.w3.org/1999/xhtml',
+        'p'
+      );
+      placeholder.className = 'placeholder';
+      placeholder.textContent = '暂无内容';
+      this.preview.replaceChildren(placeholder);
+      return;
+    }
+
+    // In a XUL document, assigning innerHTML can create XUL elements named
+    // "h2" and "p". Import parsed HTML nodes so headings and paragraphs keep
+    // their XHTML namespace and block layout.
+    const parsed = new DOMParser().parseFromString(rendered, 'text/html');
+    const nodes = [...parsed.body.childNodes]
+      .map(node => document.importNode(node, true));
+    this.preview.replaceChildren(...nodes);
   },
 
   async refreshMindmap() {
@@ -340,7 +436,6 @@ var ZoteroAINotes_Preview = {
     this.mindmapTree.replaceChildren();
     this.mindmapSummary.textContent = '笔记校验通过后生成 Mermaid 思维导图。';
     this.mindmapSummary.className = 'hint';
-    this.showPreview('note');
   },
 
   renderMindmapTree(tree) {
@@ -363,9 +458,12 @@ var ZoteroAINotes_Preview = {
 
   showPreview(kind) {
     const showMindmap = kind === 'mindmap' && Boolean(this.mindmap);
-    this.notePreviewPanel.hidden = showMindmap;
+    const showEditor = kind === 'editor';
+    this.notePreviewPanel.hidden = showMindmap || showEditor;
+    this.editorPreviewPanel.hidden = !showEditor;
     this.mindmapPreviewPanel.hidden = !showMindmap;
-    this.noteTab.classList.toggle('active', !showMindmap);
+    this.noteTab.classList.toggle('active', !showMindmap && !showEditor);
+    this.editorTab.classList.toggle('active', showEditor);
     this.mindmapTab.classList.toggle('active', showMindmap);
   },
 
@@ -400,6 +498,7 @@ var ZoteroAINotes_Preview = {
       this.validationSummary.textContent = this.errorMessage(error);
       this.validationSummary.className = 'validation error';
       this.valid = false;
+      this.setGlobalStatus('校验失败', 'error');
     } finally {
       this.setBusy(false);
       this.updateActions();
@@ -410,9 +509,9 @@ var ZoteroAINotes_Preview = {
     this.valid = validation.valid;
     const messages = [];
     if (validation.valid) {
-      messages.push('后台校验通过，可以写回或导出。');
+      messages.push('内容已通过依据检查，可以写回或导出。');
     } else {
-      messages.push('后台校验未通过，暂不允许写回或导出。');
+      messages.push('内容依据检查未通过，暂不允许写回或导出。');
     }
     if (validation.errors.length) messages.push(...validation.errors.map(item => `错误：${item}`));
     if (validation.warnings.length) messages.push(...validation.warnings.map(item => `提示：${item}`));
@@ -427,15 +526,18 @@ var ZoteroAINotes_Preview = {
   },
 
   async save() {
-    if (!this.valid || this.dirty || this.busy) return;
+    if (!this.valid || this.dirty || this.busy || this.savedMarkdown === this.editor.value) return;
     this.setBusy(true, '正在写回 Zotero…');
     try {
       const result = await this.controller.saveToZotero(this.editor.value);
+      this.savedMarkdown = this.editor.value;
       this.actionMessage.textContent = `已创建新的 Zotero 子笔记（ID：${result.noteID}），未覆盖已有笔记。`;
       this.actionMessage.className = 'action-message success';
+      this.setGlobalStatus('已写回 Zotero', 'success');
     } catch (error) {
       this.actionMessage.textContent = this.errorMessage(error);
       this.actionMessage.className = 'action-message error';
+      this.setGlobalStatus('写回失败', 'error');
     } finally {
       this.setBusy(false);
       this.updateActions();
@@ -449,9 +551,12 @@ var ZoteroAINotes_Preview = {
       const result = await this.controller.exportMarkdown(this.editor.value);
       this.actionMessage.textContent = result.path ? `Markdown 已导出：${result.path}` : '已取消导出。';
       this.actionMessage.className = `action-message ${result.path ? 'success' : 'neutral'}`;
+      this.setGlobalStatus(result.path ? 'Markdown 已导出' : '已取消导出',
+        result.path ? 'success' : 'neutral');
     } catch (error) {
       this.actionMessage.textContent = this.errorMessage(error);
       this.actionMessage.className = 'action-message error';
+      this.setGlobalStatus('导出失败', 'error');
     } finally {
       this.setBusy(false);
       this.updateActions();
@@ -467,9 +572,12 @@ var ZoteroAINotes_Preview = {
         ? `Mermaid 思维导图已导出：${result.path}`
         : '已取消导出。';
       this.actionMessage.className = `action-message ${result.path ? 'success' : 'neutral'}`;
+      this.setGlobalStatus(result.path ? '思维导图已导出' : '已取消导出',
+        result.path ? 'success' : 'neutral');
     } catch (error) {
       this.actionMessage.textContent = this.errorMessage(error);
       this.actionMessage.className = 'action-message error';
+      this.setGlobalStatus('导出失败', 'error');
     } finally {
       this.setBusy(false);
       this.updateActions();
@@ -479,21 +587,41 @@ var ZoteroAINotes_Preview = {
   setBusy(value, message, cancellable = false) {
     this.busy = value;
     this.cancellable = value && cancellable;
-    this.cancelButton.textContent = this.cancellable ? '取消生成' : '关闭';
-    this.cancelButton.disabled = value && !this.cancellable;
+    this.cancelButton.hidden = !this.cancellable;
+    this.cancelButton.textContent = this.flowStage === 'focus' ? '取消识别' : '取消生成';
+    this.cancelButton.disabled = false;
     if (value && message) this.setGlobalStatus(message, 'neutral');
     this.updateActions();
   },
 
   updateActions() {
     const canOutput = this.valid && !this.dirty && !this.busy;
-    this.saveButton.disabled = !canOutput;
+    const alreadySaved = canOutput && this.savedMarkdown === this.editor.value;
+    this.saveButton.textContent = alreadySaved ? '已写回 Zotero' : '写回 Zotero';
+    this.saveButton.disabled = !canOutput || alreadySaved;
     this.exportButton.disabled = !canOutput;
     this.exportMindmapButton.disabled = !canOutput || !this.mindmap;
     this.mindmapTab.disabled = !canOutput || !this.mindmap;
     this.copyMindmapButton.disabled = !canOutput || !this.mindmap;
     this.validateButton.disabled = this.busy || !this.dirty || !this.editor.value.trim();
-    if (this.busy) this.generateButton.disabled = true;
+    this.adjustFocusButton.disabled = this.busy;
+    for (const control of this.focusList.querySelectorAll('input, button')) {
+      control.disabled = this.busy;
+    }
+    this.extraRequirement.disabled = this.busy;
+    if (this.busy) {
+      this.generateButton.disabled = true;
+      this.retryGenerationButton.disabled = true;
+    } else {
+      this.retryGenerationButton.disabled = false;
+      const hasSelectedFocus = [...this.focusList.querySelectorAll('.focus-topic')]
+        .some(card => card.querySelector('.topic-enabled').checked);
+      this.generateButton.disabled = !hasSelectedFocus && !this.extraRequirement.value.trim();
+    }
+    const showResultActions = this.flowStage === 'result';
+    this.saveButton.hidden = !showResultActions;
+    this.exportButton.hidden = !showResultActions;
+    this.exportMindmapButton.hidden = !showResultActions;
   },
 
   setGlobalStatus(message, state) {
