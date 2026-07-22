@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GeminiClient } from '../src/llm/gemini-client';
+import { GeminiClient, RequestCancellationController } from '../src/llm/gemini-client';
 import type { ProviderConfig } from '../src/config/settings';
 
 const config: ProviderConfig = {
@@ -152,5 +152,43 @@ describe('GeminiClient', () => {
     expect(request.mock.calls[1][2]).toEqual(expect.objectContaining({
       body: expect.stringContaining('"input"')
     }));
+  });
+
+  it('cancels the active Zotero HTTP request when the abort signal fires', async () => {
+    const cancel = vi.fn();
+    const request = vi.fn((_method: string, _url: string, options: Record<string, unknown>) => {
+      return new Promise<XMLHttpRequest>((_resolve, reject) => {
+        (options.cancellerReceiver as (callback: () => void) => void)(() => {
+          cancel();
+          reject(new Error('request cancelled'));
+        });
+      });
+    });
+    const client = new GeminiClient(request);
+    const abortController = new RequestCancellationController();
+
+    const pending = client.generateJson(
+      config,
+      [{ role: 'user', content: 'JSON only' }],
+      0.1,
+      abortController.signal
+    );
+    abortController.abort();
+
+    expect(cancel).toHaveBeenCalledOnce();
+    await expect(pending).rejects.toThrow('生成已取消');
+  });
+
+  it('provides cancellation without relying on the browser AbortController global', () => {
+    vi.stubGlobal('AbortController', undefined);
+
+    const controller = new RequestCancellationController();
+    const listener = vi.fn();
+    controller.signal.subscribe(listener);
+    controller.abort();
+
+    expect(controller.signal.aborted).toBe(true);
+    expect(listener).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
   });
 });

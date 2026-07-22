@@ -51,6 +51,52 @@ export type HttpRequest = (
   options: Record<string, unknown>
 ) => Promise<XMLHttpRequest>;
 
+export interface RequestCancellationSignal {
+  readonly aborted: boolean;
+  subscribe(listener: () => void): () => void;
+}
+
+class RequestCancellationSignalImpl implements RequestCancellationSignal {
+  aborted = false;
+  private listeners = new Set<() => void>();
+
+  subscribe(listener: () => void): () => void {
+    if (this.aborted) {
+      listener();
+      return () => undefined;
+    }
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  abort() {
+    if (this.aborted) return;
+    this.aborted = true;
+    for (const listener of [...this.listeners]) listener();
+    this.listeners.clear();
+  }
+}
+
+export class RequestCancellationController {
+  readonly signal = new RequestCancellationSignalImpl();
+
+  abort() {
+    this.signal.abort();
+  }
+}
+
+export class RequestCancelledError extends Error {
+  constructor() {
+    super('生成已取消。');
+    this.name = 'RequestCancelledError';
+  }
+}
+
+export function isRequestCancelled(error: unknown): boolean {
+  return error instanceof RequestCancelledError ||
+    (error instanceof Error && error.name === 'RequestCancelledError');
+}
+
 function parseResponse(xhr: XMLHttpRequest): unknown {
   if (xhr.response && typeof xhr.response === 'object') {
     return xhr.response;
@@ -161,17 +207,26 @@ export class GeminiClient {
 
   async generateMarkdown(
     config: ProviderConfig,
-    messages: ChatMessage[]
+    messages: ChatMessage[],
+    signal?: RequestCancellationSignal
   ): Promise<string> {
-    return this.requestContent(config, messages, 0.2);
+    return this.requestContent(config, messages, 0.2, GENERATION_TIMEOUT_MS, undefined, signal);
   }
 
   async generateJson<T>(
     config: ProviderConfig,
     messages: ChatMessage[],
-    temperature = 0.1
+    temperature = 0.1,
+    signal?: RequestCancellationSignal
   ): Promise<T> {
-    const content = await this.requestContent(config, messages, temperature);
+    const content = await this.requestContent(
+      config,
+      messages,
+      temperature,
+      GENERATION_TIMEOUT_MS,
+      undefined,
+      signal
+    );
     return parseJsonContent<T>(content);
   }
 
@@ -180,14 +235,15 @@ export class GeminiClient {
     messages: ChatMessage[],
     temperature: number,
     timeout = GENERATION_TIMEOUT_MS,
-    maxTokens?: number
+    maxTokens?: number,
+    signal?: RequestCancellationSignal
   ): Promise<string> {
     const chatXhr = await this.send('POST', `${config.baseURL}chat/completions`, config, {
       model: config.model,
       messages,
       temperature,
       ...(maxTokens ? { max_tokens: maxTokens } : {})
-    }, timeout);
+    }, timeout, signal);
     const chatResponse = parseResponse(chatXhr) as ChatCompletionResponse;
     const chatContent = responseContent(chatResponse);
     if (chatContent) return chatContent;
@@ -198,7 +254,7 @@ export class GeminiClient {
         model: config.model,
         input: messages,
         ...(maxTokens ? { max_output_tokens: maxTokens } : {})
-      }, timeout);
+      }, timeout, signal);
       const responsesResponse = parseResponse(responsesXhr) as ChatCompletionResponse;
       const responsesContent = responseContent(responsesResponse);
       if (responsesContent) return responsesContent;
@@ -216,8 +272,15 @@ export class GeminiClient {
     url: string,
     config: ProviderConfig,
     body?: unknown,
-    timeout = GENERATION_TIMEOUT_MS
+    timeout = GENERATION_TIMEOUT_MS,
+    signal?: RequestCancellationSignal
   ): Promise<XMLHttpRequest> {
+    if (signal?.aborted) {
+      throw new RequestCancelledError();
+    }
+    let cancelRequest: (() => void) | undefined;
+    const cancel = () => cancelRequest?.();
+    const unsubscribe = signal?.subscribe(cancel);
     try {
       return await this.request(method, url, {
         headers: {
@@ -227,12 +290,21 @@ export class GeminiClient {
         body: body ? JSON.stringify(body) : undefined,
         responseType: 'json',
         timeout,
+        cancellerReceiver: (canceller: () => void) => {
+          cancelRequest = canceller;
+          if (signal?.aborted) canceller();
+        },
         errorDelayMax: 0,
         debug: false,
         logBodyLength: 0
       });
     } catch (error) {
+      if (signal?.aborted || isRequestCancelled(error)) {
+        throw new RequestCancelledError();
+      }
       throw new Error(`${config.providerLabel} 请求失败：${safeErrorMessage(error, config.apiKey)}`);
+    } finally {
+      unsubscribe?.();
     }
   }
 }

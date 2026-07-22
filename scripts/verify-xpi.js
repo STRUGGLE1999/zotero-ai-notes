@@ -79,11 +79,11 @@ async function verifyXPI() {
   const rootFiles = filesInZip.filter(f => !f.path.includes('/'));
   const hasManifest = rootFiles.some(f => f.path === 'manifest.json');
   const hasBootstrap = rootFiles.some(f => f.path === 'bootstrap.js');
-  const hasLocalesDir = filesInZip.some(f => f.path.startsWith('_locales/'));
+  const hasLocalesDir = filesInZip.some(f => f.path.startsWith('locale/'));
   
   console.log(`   manifest.json in root: ${hasManifest ? '✓' : '✗'}`);
   console.log(`   bootstrap.js in root:  ${hasBootstrap ? '✓' : '✗'}`);
-  console.log(`   _locales directory:    ${hasLocalesDir ? '✓' : '✗'}`);
+  console.log(`   locale directory:      ${hasLocalesDir ? '✓' : '✗'}`);
   
   if (!hasManifest) {
     console.error('   Error: manifest.json not found in XPI root');
@@ -91,6 +91,10 @@ async function verifyXPI() {
   }
   if (!hasBootstrap) {
     console.error('   Error: bootstrap.js not found in XPI root');
+    process.exit(1);
+  }
+  if (!hasLocalesDir) {
+    console.error('   Error: Zotero locale directory not found');
     process.exit(1);
   }
   
@@ -131,22 +135,17 @@ async function verifyXPI() {
     
     console.log('   Plugin ID: ', manifest.applications?.zotero?.id || '✗ Missing');
     
-    const hasDefaultLocale = 'default_locale' in manifest;
-    console.log('   default_locale present:', hasDefaultLocale ? 'Yes' : 'No');
-    
-    if (hasDefaultLocale) {
-      const locale = manifest.default_locale;
-      const messagesPath = path.join(tempExtractDir, '_locales', locale.replace('-', '_'), 'messages.json');
-      const hasMessagesJson = fs.existsSync(messagesPath);
-      console.log(`   _locales/${locale.replace('-', '_')}/messages.json: ${hasMessagesJson ? '✓' : '✗'}`);
-      
-      if (!hasMessagesJson) {
-        console.error(`   Error: default_locale is set to "${locale}" but _locales/${locale.replace('-', '_')}/messages.json is missing`);
+    const localeFiles = [
+      'locale/en-US/zotero-ai-notes.properties',
+      'locale/zh-CN/zotero-ai-notes.properties'
+    ];
+    for (const localeFile of localeFiles) {
+      const exists = fs.existsSync(path.join(tempExtractDir, localeFile));
+      console.log(`   ${localeFile}: ${exists ? '✓' : '✗'}`);
+      if (!exists) {
+        console.error(`   Error: required locale file is missing: ${localeFile}`);
         process.exit(1);
       }
-    } else if (hasLocalesDir) {
-      console.error('   Error: _locales directory exists but default_locale is not set in manifest');
-      process.exit(1);
     }
     
     console.log('\n5. manifest.json Content');

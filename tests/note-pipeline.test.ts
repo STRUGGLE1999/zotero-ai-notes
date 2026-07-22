@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ProviderConfig } from '../src/config/settings';
 import type { EvidenceDebugData } from '../src/evidence/evidence-builder';
+import { RequestCancellationController } from '../src/llm/gemini-client';
 import {
   generateValidatedNote,
   identifyFocusTopics,
+  createNotePipelineCheckpoint,
   stripInternalEvidenceIds,
   type FocusTopic
 } from '../src/llm/note-pipeline';
@@ -209,6 +211,39 @@ describe('note pipeline', () => {
     expect(client.generateJson).toHaveBeenCalledTimes(5);
   });
 
+  it('accepts equivalent localized numeric units in generated text', async () => {
+    const localizedData: EvidenceDebugData = {
+      ...data,
+      evidenceUnits: [{
+        ...data.evidenceUnits[0],
+        text: 'ImageNet contains more than 15 million labeled images and the network has 60 million parameters.'
+      }]
+    };
+    const localizedNote = {
+      ...validNoteResponse,
+      markdown_note: '# 笔记\n\nImageNet 包含超过 1,500万张标注图像，网络有 6,000万个参数。',
+      content_mappings: [{
+        ...validNoteResponse.content_mappings[0],
+        generated_text: 'ImageNet 包含超过 1,500万张标注图像，网络有 6,000万个参数。'
+      }]
+    };
+    const responses = [outlineResponse, localizedNote, supportedReview];
+    const client = { generateJson: vi.fn(async () => responses.shift()) };
+
+    const result = await generateValidatedNote(
+      config,
+      localizedData,
+      [focus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never
+    );
+
+    expect(result.validation.valid).toBe(true);
+    expect(client.generateJson).toHaveBeenCalledTimes(3);
+  });
+
   it('reports each long-running generation stage', async () => {
     const responses = [outlineResponse, validNoteResponse, supportedReview];
     const client = { generateJson: vi.fn(async () => responses.shift()) };
@@ -226,8 +261,92 @@ describe('note pipeline', () => {
 
     expect(progress.mock.calls.map(call => call[0])).toEqual([
       '正在规划笔记结构…',
+      '正在规划笔记结构…',
       '正在生成 Markdown 笔记…',
+      '正在生成 Markdown 笔记…',
+      '正在审查内容与原文依据…',
       '正在审查内容与原文依据…'
     ]);
+    const finalReport = progress.mock.calls.at(-1)?.[1];
+    expect(finalReport.callCount).toBe(3);
+    expect(finalReport.stages.slice(0, 3).map((stage: { status: string }) => stage.status))
+      .toEqual(['completed', 'completed', 'completed']);
+  });
+
+  it('retries from the failed review and preserves the completed outline and note', async () => {
+    const reviewFailure = new Error('审查服务暂时不可用');
+    const responses: unknown[] = [outlineResponse, validNoteResponse, reviewFailure, supportedReview];
+    const client = {
+      generateJson: vi.fn(async () => {
+        const response = responses.shift();
+        if (response instanceof Error) throw response;
+        return response;
+      })
+    };
+    const checkpoint = createNotePipelineCheckpoint([focus]);
+
+    await expect(generateValidatedNote(
+      config,
+      data,
+      [focus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never,
+      { checkpoint }
+    )).rejects.toThrow('审查服务暂时不可用');
+
+    expect(checkpoint.nextStage).toBe('review');
+    expect(checkpoint.outline).toBeDefined();
+    expect(checkpoint.note?.markdownNote).toContain('2015');
+    expect(checkpoint.stages.find(stage => stage.id === 'review')?.status).toBe('failed');
+
+    const result = await generateValidatedNote(
+      config,
+      data,
+      [focus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never,
+      { checkpoint }
+    );
+
+    expect(result.validation.valid).toBe(true);
+    expect(client.generateJson).toHaveBeenCalledTimes(4);
+    expect(checkpoint.stages.find(stage => stage.id === 'outline')?.callCount).toBe(1);
+    expect(checkpoint.stages.find(stage => stage.id === 'note')?.callCount).toBe(1);
+    expect(checkpoint.stages.find(stage => stage.id === 'review')?.callCount).toBe(2);
+    expect(checkpoint.callCount).toBe(4);
+  });
+
+  it('marks the current stage as cancelled and keeps it available for retry', async () => {
+    const abortController = new RequestCancellationController();
+    const client = {
+      generateJson: vi.fn(
+        (_config, _messages, _temperature, signal) =>
+          new Promise((_resolve, reject) => {
+            signal.subscribe(() => reject(new Error('request cancelled')));
+          })
+      )
+    };
+    const checkpoint = createNotePipelineCheckpoint([focus]);
+    const pending = generateValidatedNote(
+      config,
+      data,
+      [focus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never,
+      { checkpoint, signal: abortController.signal }
+    );
+
+    abortController.abort();
+
+    await expect(pending).rejects.toThrow('生成已取消');
+    expect(checkpoint.nextStage).toBe('outline');
+    expect(checkpoint.stages[0].status).toBe('cancelled');
+    expect(checkpoint.stages[0].failureReason).toBe('用户已取消生成。');
   });
 });

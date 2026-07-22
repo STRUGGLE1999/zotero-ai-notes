@@ -1,10 +1,15 @@
 import type { ProviderConfig } from '../config/settings';
 import type { EvidenceDebugData } from '../evidence/evidence-builder';
+import { RequestCancellationController } from '../llm/gemini-client';
 import {
   auditEditedMarkdown,
+  createNotePipelineCheckpoint,
   generateValidatedNote,
   identifyFocusTopics,
+  notePipelineReport,
   type FocusResult,
+  type NotePipelineCheckpoint,
+  type NotePipelineReport,
   type NotePipelineStage,
   type SelectedFocus
 } from '../llm/note-pipeline';
@@ -20,6 +25,10 @@ import {
 export class PreviewController {
   private focusResult: FocusResult | null = null;
   private lastMarkdown = '';
+  private activeCancellationController: RequestCancellationController | null = null;
+  private checkpoint: NotePipelineCheckpoint | null = null;
+  private generationKey = '';
+  private generationComplete = false;
 
   constructor(
     private parentWindow: any,
@@ -39,28 +48,74 @@ export class PreviewController {
   }
 
   async identifyFocus() {
-    this.focusResult = await identifyFocusTopics(this.config, this.data);
-    return this.focusResult;
+    const cancellationController = this.beginRequest();
+    try {
+      this.focusResult = await identifyFocusTopics(
+        this.config,
+        this.data,
+        undefined,
+        cancellationController.signal
+      );
+      return this.focusResult;
+    } finally {
+      this.finishRequest(cancellationController);
+    }
   }
 
   async generate(
     selectedFocus: SelectedFocus[],
     extraRequirement: string,
-    onProgress?: (stage: NotePipelineStage) => void
+    onProgress?: (stage: NotePipelineStage, report: NotePipelineReport) => void
   ) {
     if (!this.focusResult) {
       throw new Error('请先完成关注重点识别。');
     }
-    const result = await generateValidatedNote(
-      this.config,
-      this.data,
-      this.focusResult.focusTopics,
-      selectedFocus,
-      extraRequirement,
-      onProgress
-    );
-    this.lastMarkdown = result.note.markdownNote;
-    return result;
+    const key = JSON.stringify({ selectedFocus, extraRequirement });
+    if (!this.checkpoint || this.generationKey !== key || this.generationComplete) {
+      const selectedMap = new Map(selectedFocus.map(item => [item.id, item.priority]));
+      const focusTopics = this.focusResult.focusTopics
+        .filter(topic => selectedMap.has(topic.id))
+        .map(topic => ({ ...topic, priority: selectedMap.get(topic.id)! }))
+        .sort((first, second) => first.priority - second.priority);
+      if (!focusTopics.length && !extraRequirement.trim()) {
+        throw new Error('请至少选择一个关注重点，或填写本次特别关注的问题。');
+      }
+      this.checkpoint = createNotePipelineCheckpoint(focusTopics);
+      this.generationKey = key;
+      this.generationComplete = false;
+    }
+    const cancellationController = this.beginRequest();
+    try {
+      const result = await generateValidatedNote(
+        this.config,
+        this.data,
+        this.focusResult.focusTopics,
+        selectedFocus,
+        extraRequirement,
+        onProgress,
+        undefined,
+        { checkpoint: this.checkpoint, signal: cancellationController.signal }
+      );
+      this.lastMarkdown = result.note.markdownNote;
+      this.generationComplete = true;
+      return result;
+    } finally {
+      this.finishRequest(cancellationController);
+    }
+  }
+
+  cancelActiveRequest() {
+    this.activeCancellationController?.abort();
+  }
+
+  getGenerationState() {
+    return {
+      report: this.checkpoint ? notePipelineReport(this.checkpoint) : null,
+      noteMarkdown: this.checkpoint?.note?.markdownNote || '',
+      hasOutline: Boolean(this.checkpoint?.outline),
+      canRetry: Boolean(this.checkpoint && !this.generationComplete),
+      nextStage: this.checkpoint?.nextStage || null
+    };
   }
 
   renderMarkdown(markdown: string) {
@@ -123,6 +178,21 @@ export class PreviewController {
       evidenceCount: this.data.stats.evidenceCount,
       pluginVersion: this.pluginVersion
     };
+  }
+
+  private beginRequest(): RequestCancellationController {
+    if (this.activeCancellationController) {
+      throw new Error('已有任务正在执行，请先取消或等待完成。');
+    }
+    const controller = new RequestCancellationController();
+    this.activeCancellationController = controller;
+    return controller;
+  }
+
+  private finishRequest(controller: RequestCancellationController) {
+    if (this.activeCancellationController === controller) {
+      this.activeCancellationController = null;
+    }
   }
 }
 

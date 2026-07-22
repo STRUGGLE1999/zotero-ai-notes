@@ -10,6 +10,7 @@ const packageVersion = require(path.join(rootDir, 'package.json')).version;
 const srcDir = path.join(rootDir, 'src');
 const addonDir = path.join(rootDir, 'addon');
 const buildDir = path.join(rootDir, 'build');
+const ZIP_ENTRY_DATE = new Date('2000-01-01T00:00:00.000Z');
 
 function cleanBuild() {
   if (fs.existsSync(buildDir)) {
@@ -64,18 +65,28 @@ async function createXPI() {
   const JSZip = require('jszip');
   const zip = new JSZip();
 
-  const buildFiles = fs.readdirSync(buildDir, { recursive: true });
+  const buildFiles = fs.readdirSync(buildDir, { recursive: true }).sort();
   for (const file of buildFiles) {
     const filePath = path.join(buildDir, file);
     if (fs.statSync(filePath).isFile()) {
       const relativePath = file.replace(/\\/g, '/');
-      zip.file(relativePath, fs.readFileSync(filePath));
+      zip.file(relativePath, fs.readFileSync(filePath), {
+        createFolders: false,
+        date: ZIP_ENTRY_DATE,
+        unixPermissions: 0o100644
+      });
     }
   }
 
   const xpiPath = path.join(rootDir, `zotero-ai-notes-${isDev ? 'dev' : packageVersion}.xpi`);
   return new Promise((resolve) => {
-    zip.generateNodeStream({ type: 'nodebuffer', streamFiles: true })
+    zip.generateNodeStream({
+      type: 'nodebuffer',
+      streamFiles: true,
+      platform: 'UNIX',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 9 }
+    })
       .pipe(fs.createWriteStream(xpiPath))
       .on('finish', () => {
         const size = fs.statSync(xpiPath).size;
