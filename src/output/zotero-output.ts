@@ -12,16 +12,20 @@ export interface NoteMetadata {
   pluginVersion: string;
 }
 
-function formatDate(value: string): string {
+function formatDateTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return date.toISOString().slice(0, 10);
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return [
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  ].join(' ');
 }
 
 export function buildZoteroNoteHtml(markdown: string, metadata: NoteMetadata): string {
-  const noteTitle = `AI 整理笔记 - ${formatDate(metadata.generatedAt)}`;
+  const noteTitle = `AI 整理笔记 - ${formatDateTime(metadata.generatedAt)}`;
   const rendered = markdownToSafeHtml(markdown).replace(/^<h1>.*?<\/h1>\s*/s, '');
   return [
     `<h1>${escapeHtml(noteTitle)}</h1>`,

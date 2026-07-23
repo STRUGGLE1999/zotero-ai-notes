@@ -144,17 +144,17 @@ export interface NotePipelineOptions {
 }
 
 export type NotePipelineStage =
-  | '正在规划笔记结构…'
+  | '正在本地整理笔记结构…'
   | '正在生成 Markdown 笔记…'
-  | '正在审查内容与原文依据…'
-  | '审查发现问题，正在自动修订…'
+  | '正在审查并校正内容…'
+  | '校验仍有问题，正在再次修订…'
   | '正在复核修订结果…';
 
 const STAGE_LABELS: Record<NotePipelineStageId, NotePipelineStage> = {
-  outline: '正在规划笔记结构…',
+  outline: '正在本地整理笔记结构…',
   note: '正在生成 Markdown 笔记…',
-  review: '正在审查内容与原文依据…',
-  revision: '审查发现问题，正在自动修订…',
+  review: '正在审查并校正内容…',
+  revision: '校验仍有问题，正在再次修订…',
   rereview: '正在复核修订结果…'
 };
 
@@ -211,18 +211,6 @@ interface RawFocusResult {
   warnings?: unknown;
 }
 
-interface RawOutlineResult {
-  article_core?: Record<string, unknown>;
-  articleCore?: Record<string, unknown>;
-  user_focus_relation?: unknown;
-  userFocusRelation?: unknown;
-  outline?: Array<Record<string, unknown>>;
-  missing_information?: unknown;
-  missingInformation?: unknown;
-  conflicts?: unknown;
-  warnings?: unknown;
-}
-
 interface RawGeneratedNote {
   title?: unknown;
   markdown_note?: unknown;
@@ -240,6 +228,13 @@ interface RawReviewResult {
   overall_risk?: unknown;
   overallRisk?: unknown;
   warnings?: unknown;
+}
+
+interface RawReviewedNote {
+  final_note?: RawGeneratedNote;
+  finalNote?: RawGeneratedNote;
+  final_review?: RawReviewResult;
+  finalReview?: RawReviewResult;
 }
 
 const EVIDENCE_ID_PATTERN = /\[?E-[A-Z0-9-]+\]?/gi;
@@ -342,37 +337,6 @@ function normalizeFocusResult(raw: RawFocusResult, data: EvidenceDebugData): Foc
   })).filter(question => question.question);
 
   return { focusTopics, userQuestions, warnings: warningArray(raw.warnings) };
-}
-
-function normalizeOutlineResult(raw: RawOutlineResult, data: EvidenceDebugData): OutlineResult {
-  const core = raw.article_core || raw.articleCore || {};
-  const rawSections = raw.outline || [];
-  const outline = rawSections.map((section, index): OutlineSection => ({
-    id: stringValue(section.id, `S${index + 1}`),
-    heading: stringValue(section.heading, `章节 ${index + 1}`),
-    purpose: stringValue(section.purpose),
-    sourcePlan: stringArray(section.source_plan || section.sourcePlan)
-      .map(value => enumValue(value, ['document', 'user_annotation', 'synthesis'] as const, 'document')),
-    evidenceIds: identifierArray(section.evidence_ids || section.evidenceIds),
-    annotationIds: identifierArray(section.annotation_ids || section.annotationIds),
-    questionsToAnswer: stringArray(section.questions_to_answer || section.questionsToAnswer)
-  }));
-
-  const result: OutlineResult = {
-    articleCore: {
-      problem: stringValue(core.problem),
-      method: stringValue(core.method),
-      conclusion: stringValue(core.conclusion),
-      evidenceIds: identifierArray(core.evidence_ids || core.evidenceIds)
-    },
-    userFocusRelation: stringValue(raw.user_focus_relation || raw.userFocusRelation),
-    outline,
-    missingInformation: stringArray(raw.missing_information || raw.missingInformation),
-    conflicts: stringArray(raw.conflicts),
-    warnings: warningArray(raw.warnings)
-  };
-  validateOutline(result, data);
-  return result;
 }
 
 function normalizeGeneratedNote(raw: RawGeneratedNote): GeneratedNote {
@@ -539,6 +503,28 @@ function combineValidation(
   };
 }
 
+function localReview(note: GeneratedNote): ReviewResult {
+  return {
+    reviewResults: note.contentMappings.map(mapping => ({
+      mappingId: mapping.id,
+      status: 'supported',
+      reason: '已通过本地结构、Evidence ID 与数字一致性检查',
+      validEvidenceIds: mapping.evidenceIds,
+      invalidEvidenceIds: [],
+      recommendedAction: 'keep'
+    })),
+    overallRisk: 'low',
+    warnings: ['未检测到需额外模型审查的风险信号，已跳过额外调用。']
+  };
+}
+
+function requiresModelReview(note: GeneratedNote, data: EvidenceDebugData): boolean {
+  const local = staticValidation(note, data);
+  return local.errors.length > 0 || note.contentMappings.some(mapping =>
+    mapping.needsReview || mapping.confidence !== 'high'
+  );
+}
+
 export function stripInternalEvidenceIds(markdown: string): string {
   return markdown
     .replace(/\s*\[(?:E-[A-Z0-9-]+)(?:\s*,\s*E-[A-Z0-9-]+)*\]/gi, '')
@@ -623,42 +609,47 @@ export async function identifyFocusTopics(
   }
 }
 
-async function generateOutline(
-  config: ProviderConfig,
+function buildOutline(
   data: EvidenceDebugData,
   focusTopics: FocusTopic[],
-  extraRequirement: string,
-  client: GeminiClient,
-  signal?: RequestCancellationSignal
+  extraRequirement: string
 ): Promise<OutlineResult> {
-  const raw = await client.generateJson<RawOutlineResult>(config, [
-    {
-      role: 'system',
-      content:
-        '你是严格的文献笔记规划助手。只使用提供的 Evidence，为每个主要章节分配真实 Evidence ID。' +
-        '信息不足时删除章节或标记缺失，不得虚构。只输出 JSON。'
-    },
-    {
-      role: 'user',
-      content: JSON.stringify({
-        task: '生成文章主线和笔记大纲',
-        document_title: data.document.title,
-        confirmed_focus_topics: focusTopics,
-        extra_requirement: extraRequirement,
-        evidence_units: data.evidenceUnits.map(evidenceForPrompt),
-        output_schema: {
-          article_core: { problem: '', method: '', conclusion: '', evidence_ids: [] },
-          user_focus_relation: '',
-          outline: [{
-            id: 'S1', heading: '', purpose: '', source_plan: [], evidence_ids: [],
-            annotation_ids: [], questions_to_answer: []
-          }],
-          missing_information: [], conflicts: [], warnings: []
-        }
-      })
-    }
-  ], 0.1, signal);
-  return normalizeOutlineResult(raw, data);
+  const allEvidenceIds = data.evidenceUnits.map(unit => unit.id);
+  const sections: OutlineSection[] = focusTopics.map((topic, index) => {
+    const evidence = data.evidenceUnits.filter(unit => topic.annotationIds.includes(unit.annotationId));
+    return {
+      id: `S${index + 1}`,
+      heading: topic.title,
+      purpose: topic.description || topic.reason || '整理用户关注的内容',
+      sourcePlan: evidence.some(unit => unit.userComment || unit.tags.length)
+        ? ['document', 'user_annotation']
+        : ['document'],
+      evidenceIds: evidence.map(unit => unit.id),
+      annotationIds: topic.annotationIds,
+      questionsToAnswer: []
+    };
+  });
+  if (!sections.length && extraRequirement.trim()) {
+    sections.push({
+      id: 'S1',
+      heading: '本次补充要求',
+      purpose: extraRequirement.trim(),
+      sourcePlan: ['document'],
+      evidenceIds: allEvidenceIds,
+      annotationIds: [],
+      questionsToAnswer: [extraRequirement.trim()]
+    });
+  }
+  const result: OutlineResult = {
+    articleCore: { problem: '', method: '', conclusion: '', evidenceIds: allEvidenceIds },
+    userFocusRelation: focusTopics.map(topic => topic.title).join('、'),
+    outline: sections,
+    missingInformation: [],
+    conflicts: [],
+    warnings: []
+  };
+  validateOutline(result, data);
+  return Promise.resolve(result);
 }
 
 async function generateNaturalNote(
@@ -668,32 +659,39 @@ async function generateNaturalNote(
   outline: OutlineResult,
   extraRequirement: string,
   client: GeminiClient,
-  correction?: { errors: string[]; review: ReviewResult },
   signal?: RequestCancellationSignal
 ): Promise<GeneratedNote> {
   const raw = await client.generateJson<RawGeneratedNote>(config, [
     {
       role: 'system',
       content:
-        '你是可靠的中文文献笔记助手。严格依据已批准大纲、Evidence 和用户批注生成自然 Markdown。' +
+        '你是可靠的中文文献笔记助手。先在内部规划，再严格依据大纲、Evidence 和用户批注生成自然 Markdown。' +
         '正式 markdown_note 中不得显示 Evidence ID、Mapping ID、来源类型或“AI 推断”等技术标签。' +
-        '不得编造数字、作者结论、适用场景或用户观点。用户问题不能改写为确定结论。只输出 JSON。'
+        '不得编造数字、作者结论、适用场景或用户观点。用户问题不能改写为确定结论。' +
+        '输出前在内部逐条核对所有陈述；找不到直接 Evidence 的内容必须删除，不要留给后续审查修复。' +
+        'Markdown 必须使用 ## 分节，段落之间留空行，每段 2–4 句。只输出 JSON。'
     },
     {
       role: 'user',
       content: JSON.stringify({
-        task: correction ? '根据审查问题修订自然笔记' : '生成自然笔记和后台内容映射',
+        task: '生成结构清晰的自然笔记和后台内容映射',
         document_title: data.document.title,
         confirmed_focus_topics: focusTopics,
+        focus_priority_semantics: {
+          1: '用户标记的重点主题：优先呈现，并在证据允许范围内更详细展开',
+          2: '用户选择的普通主题：正常覆盖'
+        },
         approved_outline: outline,
         extra_requirement: extraRequirement,
         evidence_units: data.evidenceUnits.map(evidenceForPrompt),
-        previous_validation: correction,
         rules: [
           'markdown_note 可直接阅读，不显示任何 E-... 内部编号',
+          'markdown_note 至少包含两个 ## 二级标题，标题和段落前后使用真实换行',
+          '不要把整篇笔记写成一个超长段落',
           'content_mappings 仅供后台校验',
           'generated_text 必须是 markdown_note 中对应内容的原文片段',
-          '每个实质性内容映射至少一个真实 Evidence ID'
+          '每个实质性内容映射至少一个真实 Evidence ID',
+          '仅保留可标记为 confidence=high 且 needs_review=false 的陈述；无法确认的内容改写为未解答问题或删除'
         ],
         output_schema: {
           title: '', markdown_note: '',
@@ -709,6 +707,57 @@ async function generateNaturalNote(
   return normalizeGeneratedNote(raw);
 }
 
+async function reviewAndCorrectNote(
+  config: ProviderConfig,
+  data: EvidenceDebugData,
+  note: GeneratedNote,
+  client: GeminiClient,
+  previousErrors: string[] = [],
+  signal?: RequestCancellationSignal
+): Promise<{ note: GeneratedNote; review: ReviewResult }> {
+  const raw = await client.generateJson<RawReviewedNote>(config, [
+    {
+      role: 'system',
+      content:
+        '你是独立的文献事实审查员。检查初稿的每条内容映射，并在同一次任务中直接修正无依据内容。' +
+        '重点检查数字、归因、用户观点和被误写为结论的问题。最终笔记必须使用 ## 分节和空行分段。' +
+        '只对修正后的 final_note 逐条审查，只输出 JSON。'
+    },
+    {
+      role: 'user',
+      content: JSON.stringify({
+        task: '审查并直接校正初稿',
+        draft_note: note,
+        previous_validation_errors: previousErrors,
+        evidence_units: data.evidenceUnits.map(evidenceForPrompt),
+        output_schema: {
+          final_note: {
+            title: '', markdown_note: '',
+            content_mappings: [{
+              id: 'M1', generated_text: '', source_kind: 'document', evidence_ids: [],
+              confidence: 'high', needs_review: false
+            }],
+            unanswered_questions: [], warnings: []
+          },
+          final_review: {
+            review_results: [{
+              mapping_id: 'M1', status: 'supported', reason: '', valid_evidence_ids: [],
+              invalid_evidence_ids: [], recommended_action: 'keep'
+            }],
+            overall_risk: 'low', warnings: []
+          }
+        }
+      })
+    }
+  ], 0.1, signal);
+  const finalNote = raw.final_note || raw.finalNote;
+  const finalReview = raw.final_review || raw.finalReview;
+  if (!finalNote || !finalReview) {
+    throw new Error('审查结果缺少修正后的笔记或最终审查。');
+  }
+  return { note: normalizeGeneratedNote(finalNote), review: normalizeReviewResult(finalReview) };
+}
+
 async function reviewNote(
   config: ProviderConfig,
   data: EvidenceDebugData,
@@ -720,8 +769,8 @@ async function reviewNote(
     {
       role: 'system',
       content:
-        '你是严格的事实与引用审查员。逐条检查内部内容映射是否被 Evidence 支持，尤其检查数字、' +
-        '用户观点、问题是否被误写为结论以及外部常识混入。只输出 JSON。'
+        '你是严格的事实审查员。只审查用户编辑后的内容映射，不修改 Markdown。' +
+        '检查数字、用户观点、问题是否被误写为结论以及外部常识混入。只输出 JSON。'
     },
     {
       role: 'user',
@@ -796,12 +845,34 @@ export async function generateValidatedNote(
       throw error;
     }
   };
+  const runLocalStage = async <T>(id: NotePipelineStageId, task: () => Promise<T>): Promise<T> => {
+    const stage = checkpoint.stages.find(item => item.id === id)!;
+    stage.status = 'running';
+    stage.failureReason = undefined;
+    reportProgress(stage.label);
+    const startedAt = Date.now();
+    try {
+      const result = await task();
+      const elapsed = Date.now() - startedAt;
+      stage.durationMs += elapsed;
+      stage.status = 'completed';
+      reportProgress(stage.label);
+      return result;
+    } catch (error) {
+      const elapsed = Date.now() - startedAt;
+      stage.durationMs += elapsed;
+      stage.status = 'failed';
+      stage.failureReason = error instanceof Error ? error.message : String(error);
+      reportProgress(stage.label);
+      throw error;
+    }
+  };
 
   while (true) {
     switch (checkpoint.nextStage) {
       case 'outline':
-        checkpoint.outline = await runStage('outline', () => generateOutline(
-          config, data, focusTopics, extraRequirement, client, options.signal
+        checkpoint.outline = await runLocalStage('outline', () => buildOutline(
+          data, focusTopics, extraRequirement
         ));
         checkpoint.nextStage = 'note';
         break;
@@ -813,15 +884,32 @@ export async function generateValidatedNote(
           checkpoint.outline!,
           extraRequirement,
           client,
-          undefined,
           options.signal
         ));
+        if (!requiresModelReview(checkpoint.note, data)) {
+          checkpoint.review = localReview(checkpoint.note);
+          checkpoint.validation = combineValidation(checkpoint.note, data, checkpoint.review);
+          for (const stage of checkpoint.stages.filter(item =>
+            item.id === 'review' || item.id === 'revision' || item.id === 'rereview'
+          )) {
+            stage.status = 'skipped';
+          }
+          reportProgress(STAGE_LABELS.review);
+          return {
+            focusTopics,
+            outline: checkpoint.outline!,
+            note: checkpoint.note,
+            validation: checkpoint.validation
+          };
+        }
         checkpoint.nextStage = 'review';
         break;
-      case 'review':
-        checkpoint.review = await runStage('review', () => reviewNote(
-          config, data, checkpoint.note!, client, options.signal
+      case 'review': {
+        const reviewed = await runStage('review', () => reviewAndCorrectNote(
+          config, data, checkpoint.note!, client, [], options.signal
         ));
+        checkpoint.note = reviewed.note;
+        checkpoint.review = reviewed.review;
         checkpoint.validation = combineValidation(checkpoint.note!, data, checkpoint.review);
         if (checkpoint.validation.valid) {
           for (const stage of checkpoint.stages.filter(item =>
@@ -838,29 +926,25 @@ export async function generateValidatedNote(
         }
         checkpoint.nextStage = 'revision';
         break;
+      }
       case 'revision': {
-        const correction = {
-          errors: checkpoint.validation!.errors,
-          review: checkpoint.review!
-        };
-        checkpoint.note = await runStage('revision', () => generateNaturalNote(
-          config,
-          data,
-          focusTopics,
-          checkpoint.outline!,
-          extraRequirement,
-          client,
-          correction,
-          options.signal
+        const reviewed = await runStage('revision', () => reviewAndCorrectNote(
+          config, data, checkpoint.note!, client, checkpoint.validation!.errors, options.signal
         ));
-        checkpoint.nextStage = 'rereview';
-        break;
+        checkpoint.note = reviewed.note;
+        checkpoint.review = reviewed.review;
+        checkpoint.validation = combineValidation(checkpoint.note!, data, checkpoint.review);
+        checkpoint.stages.find(stage => stage.id === 'rereview')!.status = 'skipped';
+        return {
+          focusTopics,
+          outline: checkpoint.outline!,
+          note: checkpoint.note!,
+          validation: checkpoint.validation
+        };
       }
       case 'rereview':
-        checkpoint.review = await runStage('rereview', () => reviewNote(
-          config, data, checkpoint.note!, client, options.signal
-        ));
-        checkpoint.validation = combineValidation(checkpoint.note!, data, checkpoint.review);
+        checkpoint.stages.find(stage => stage.id === 'rereview')!.status = 'skipped';
+        checkpoint.validation = combineValidation(checkpoint.note!, data, checkpoint.review!);
         return {
           focusTopics,
           outline: checkpoint.outline!,

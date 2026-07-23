@@ -37,6 +37,13 @@ describe('Markdown output', () => {
     expect(html).toContain('<strong>重点</strong>');
   });
 
+  it('splits an abnormally long plain-text note into readable preview paragraphs', () => {
+    const sentence = '这是一句用于解释文献方法和实验结果的较长内容。';
+    const html = markdownToSafeHtml(sentence.repeat(12));
+
+    expect(html.match(/<p>/g)?.length).toBeGreaterThan(1);
+  });
+
   it('creates a new child note without overwriting existing notes', async () => {
     const saveTx = vi.fn(async () => 42);
     const setNote = vi.fn();
@@ -49,7 +56,7 @@ describe('Markdown output', () => {
     const noteID = await createZoteroChildNote(
       { id: 7, libraryID: 1 },
       '# 原标题\n\n正文',
-      metadata,
+      { ...metadata, generatedAt: '2026-07-14T12:34:56' },
       zotero
     );
 
@@ -58,7 +65,9 @@ describe('Markdown output', () => {
     const item = Item.mock.instances[0] as unknown as { parentItemID: number; libraryID: number };
     expect(item.parentItemID).toBe(7);
     expect(item.libraryID).toBe(1);
-    expect(setNote).toHaveBeenCalledWith(expect.stringContaining('AI 整理笔记 - 2026-07-14'));
+    expect(setNote).toHaveBeenCalledWith(
+      expect.stringContaining('AI 整理笔记 - 2026-07-14 12:34:56')
+    );
     expect(saveTx).toHaveBeenCalledTimes(1);
   });
 
