@@ -2,7 +2,7 @@
 
 面向 Zotero 9 的 AI 论文批注整理插件。它会读取用户在 PDF 中留下的高亮、评论、标签和页码，结合批注附近的原文，生成经过后台校验的 Markdown 笔记，并进一步生成 Mermaid 思维导图。
 
-> 当前开发测试版：`0.3.8`；最新公开测试版：`0.3.7`；已实机验证：macOS + Zotero `9.0.6`。
+> 最新公开测试版：`0.3.8`；已实机验证：macOS + Zotero `9.0.6`。
 > Windows / Linux 使用同一套跨平台接口，仍需分别完成一次实机回归。
 
 ## 已实现功能
@@ -57,7 +57,7 @@ Zotero 版本可以从 macOS 顶部菜单“Zotero → 关于 Zotero”查看。
 
 #### 方式 A：从 GitHub Releases 下载（推荐）
 
-- [下载最新公开测试版 0.3.7](https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.3.7/zotero-ai-notes-0.3.7.xpi)
+- [下载最新公开测试版 0.3.8](https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.3.8/zotero-ai-notes-0.3.8.xpi)
 - [查看并下载全部历史版本](https://github.com/STRUGGLE1999/zotero-ai-notes/releases)
 
 下载后直接进入下一步，不要解压 XPI 文件。如果浏览器尝试打开 `.xpi`，请右键下载链接并选择“链接另存为”。
@@ -307,7 +307,7 @@ scripts/                构建及 XPI 验证脚本
 
 GitHub Releases 只发布值得用户集中下载的版本：新的次版本或主版本、重要功能里程碑、修复无法安装/启动/生成/数据安全问题的关键补丁，以及明确面向用户的公开测试版。内部测试版和普通小修复可以只保留在代码与 CHANGELOG 中，不必逐个创建 Release。跨平台稳定版门槛达成前，`0.x` Release 默认标记为 Pre-release。
 
-`0.3.7` 合并了 `0.3.6` 的生成流程优化，并修复了导致 Zotero 中无法识别关注重点的阻断问题，因此作为关键补丁发布。更完整的规则见 [AGENTS.md](AGENTS.md)。
+`0.3.8` 明显减少了常规生成路径中的模型调用，重构了核心交互，并修复了笔记预览无法正确分段的问题，因此作为公开 Pre-release 发布。更完整的规则见 [AGENTS.md](AGENTS.md)。
 
 ## 后续计划
 
