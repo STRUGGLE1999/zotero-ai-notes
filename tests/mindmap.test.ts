@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildMermaidMindmap } from '../src/output/mindmap';
+import { buildMindmapDocument } from '../src/output/mindmap';
 
-describe('Mermaid mindmap output', () => {
+describe('mindmap document output', () => {
   it('converts a validated note into a bounded hierarchy without adding facts', () => {
     const note = [
       '### 1. 网络架构设计',
@@ -13,23 +13,19 @@ describe('Mermaid mindmap output', () => {
       '- **Dropout**：随机失活隐藏层神经元'
     ].join('\n');
 
-    const result = buildMermaidMindmap('ImageNet classification', note);
+    const result = buildMindmapDocument('ImageNet classification', note);
 
-    expect(result.source).toContain('mindmap');
-    expect(result.source).toContain('root((ImageNet classification))');
-    expect(result.source).toContain('    1. 网络架构设计');
-    expect(result.source).toContain('      模型包含五层卷积层和三层全连接层');
-    expect(result.source).toContain('      图像平移与翻转');
-    expect(result.markdown).toBe(`\`\`\`mermaid\n${result.source}\n\`\`\``);
+    expect(result.document.source).toBe('generated');
+    expect(result.document.sheets).toHaveLength(1);
+    expect(result.tree.text).toBe('ImageNet classification');
+    expect(result.tree.children[0].text).toBe('1. 网络架构设计');
+    expect(result.tree.children[0].children[0].text).toContain('模型包含五层卷积层');
     expect(result.nodeCount).toBeGreaterThan(5);
     expect(result.maxDepth).toBeLessThanOrEqual(5);
-    for (const node of result.source.split('\n').slice(2)) {
-      expect(node.trim().length).toBeLessThanOrEqual(30);
-    }
   });
 
   it('removes internal Evidence IDs and ignores fenced code', () => {
-    const result = buildMermaidMindmap('论文', [
+    const result = buildMindmapDocument('论文', [
       '## 方法',
       '结论来自原文 [E-ABC-1-01]。',
       '```js',
@@ -37,22 +33,23 @@ describe('Mermaid mindmap output', () => {
       '```'
     ].join('\n'));
 
-    expect(result.source).not.toContain('E-ABC');
-    expect(result.source).not.toContain('invented');
-    expect(result.source).toContain('结论来自原文');
+    expect(JSON.stringify(result.tree)).not.toContain('E-ABC');
+    expect(JSON.stringify(result.tree)).not.toContain('invented');
+    expect(result.tree.children[0].children[0].text).toContain('结论来自原文');
   });
 
   it('keeps the source order in the tree', () => {
-    const result = buildMermaidMindmap('论文', '## 第一部分\n内容一。\n## 第二部分\n内容二。');
+    const result = buildMindmapDocument('论文', '## 第一部分\n内容一。\n## 第二部分\n内容二。');
     expect(result.tree.children.map(node => node.text)).toEqual(['第一部分', '第二部分']);
     expect(result.tree.children[0].children[0].text).toBe('内容一。');
   });
 
-  it('shortens long English labels at a word boundary', () => {
-    const result = buildMermaidMindmap(
-      'ImageNet classification with deep convolutional neural networks',
+  it('shortens very long labels at a word boundary while allowing academic titles', () => {
+    const result = buildMindmapDocument(
+      'ImageNet classification with deep convolutional neural networks and large scale training experiments',
       '## 方法\n正文。'
     );
-    expect(result.tree.text).toBe('ImageNet classification with');
+    expect(result.tree.text.length).toBeLessThanOrEqual(72);
+    expect(result.tree.text.endsWith(' ')).toBe(false);
   });
 });

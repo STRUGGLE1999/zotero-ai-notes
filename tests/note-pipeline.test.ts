@@ -71,6 +71,9 @@ const validNoteResponse = {
     id: 'M1',
     generated_text: '方法在 2015 年得到改进。',
     source_kind: 'document',
+    content_role: 'context_explanation',
+    focus_topic_ids: ['F1'],
+    annotation_ids: ['A1'],
     evidence_ids: ['E-PDF-1-01'],
     confidence: 'high',
     needs_review: false
@@ -165,6 +168,178 @@ describe('note pipeline', () => {
     expect(result.validation.warnings).toContain(
       '未检测到需额外模型审查的风险信号，已跳过额外调用。'
     );
+  });
+
+  it('does not let an extra requirement replace a real annotation-backed focus', async () => {
+    const client = { generateJson: vi.fn() };
+
+    await expect(generateValidatedNote(
+      config,
+      data,
+      [focus],
+      [],
+      '总结整篇论文',
+      undefined,
+      client as never
+    )).rejects.toThrow('特别要求只能补充已选重点');
+    expect(client.generateJson).not.toHaveBeenCalled();
+  });
+
+  it('sends only evidence belonging to user-selected focus topics', async () => {
+    const dataWithUnselectedEvidence: EvidenceDebugData = {
+      ...data,
+      stats: { ...data.stats, annotationCount: 2, evidenceCount: 2 },
+      evidenceUnits: [
+        data.evidenceUnits[0],
+        {
+          ...data.evidenceUnits[0],
+          id: 'E-PDF-1-02',
+          annotationId: 'A2',
+          annotationKey: 'ANN2',
+          annotationText: 'unselected experiment result',
+          userComment: '',
+          tags: ['实验']
+        }
+      ]
+    };
+    const client = { generateJson: vi.fn(async () => validNoteResponse) };
+
+    await generateValidatedNote(
+      config,
+      dataWithUnselectedEvidence,
+      [focus, { ...focus, id: 'F2', title: '实验', annotationIds: ['A2'], priority: 2 }],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never
+    );
+
+    const messages = client.generateJson.mock.calls[0][1] as Array<{ content: string }>;
+    const payload = JSON.parse(messages[1].content);
+    expect(payload.evidence_units.map((unit: { annotation_id: string }) => unit.annotation_id))
+      .toEqual(['A1']);
+    expect(payload.approved_outline.articleCore.evidenceIds).toEqual(['E-PDF-1-01']);
+    expect(messages[0].content).toContain('不是总结整篇论文，也不是改写高亮');
+  });
+
+  it('requires contextual interpretation instead of annotation-only restatement', async () => {
+    const restatement = {
+      ...validNoteResponse,
+      content_mappings: [{
+        ...validNoteResponse.content_mappings[0],
+        content_role: 'annotation_summary'
+      }]
+    };
+    const responses = [restatement, reviewedValidNote];
+    const client = { generateJson: vi.fn(async () => responses.shift()) };
+
+    const result = await generateValidatedNote(
+      config,
+      data,
+      [focus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never
+    );
+
+    expect(result.validation.valid).toBe(true);
+    expect(client.generateJson).toHaveBeenCalledTimes(2);
+    const reviewMessages = client.generateJson.mock.calls[1][1] as Array<{ content: string }>;
+    expect(reviewMessages[1].content).toContain('只有批注复述');
+  });
+
+  it('does not allow invented user opinions when an annotation has no comment', async () => {
+    const noCommentData: EvidenceDebugData = {
+      ...data,
+      evidenceUnits: [{ ...data.evidenceUnits[0], userComment: '', tags: [] }]
+    };
+    const inventedOpinion = {
+      ...validNoteResponse,
+      markdown_note: '# 笔记\n\n用户认为该方法更重要。',
+      content_mappings: [{
+        ...validNoteResponse.content_mappings[0],
+        generated_text: '用户认为该方法更重要。',
+        source_kind: 'user_annotation',
+        content_role: 'user_comment'
+      }]
+    };
+    const responses = [inventedOpinion, reviewedValidNote];
+    const client = { generateJson: vi.fn(async () => responses.shift()) };
+
+    const result = await generateValidatedNote(
+      config,
+      noCommentData,
+      [focus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never
+    );
+
+    expect(result.validation.valid).toBe(true);
+    expect(client.generateJson).toHaveBeenCalledTimes(2);
+    expect(result.note.markdownNote).not.toContain('用户认为');
+  });
+
+  it('preserves a user question as a question in the final note', async () => {
+    const questionData: EvidenceDebugData = {
+      ...data,
+      evidenceUnits: [{
+        ...data.evidenceUnits[0],
+        userComment: '为什么这种方法能够降低过拟合？'
+      }]
+    };
+    const answeredAsConclusion = {
+      ...validNoteResponse,
+      markdown_note: '# 笔记\n\n这种方法能够降低过拟合。'
+    };
+    const questionNote = {
+      ...validNoteResponse,
+      markdown_note: '# 笔记\n\n## 方法解释\n\n原文说明了方法的作用。\n\n仍需追问：为什么这种方法能够降低过拟合？',
+      content_mappings: [
+        validNoteResponse.content_mappings[0],
+        {
+          ...validNoteResponse.content_mappings[0],
+          id: 'M2',
+          generated_text: '仍需追问：为什么这种方法能够降低过拟合？',
+          source_kind: 'user_annotation',
+          content_role: 'open_question'
+        }
+      ]
+    };
+    const questionReview = {
+      review_results: ['M1', 'M2'].map(id => ({
+        mapping_id: id,
+        status: 'supported',
+        reason: '原文或用户问题支持',
+        valid_evidence_ids: ['E-PDF-1-01'],
+        invalid_evidence_ids: [],
+        recommended_action: 'keep'
+      })),
+      overall_risk: 'low',
+      warnings: []
+    };
+    const responses = [
+      answeredAsConclusion,
+      { final_note: questionNote, final_review: questionReview }
+    ];
+    const client = { generateJson: vi.fn(async () => responses.shift()) };
+
+    const result = await generateValidatedNote(
+      config,
+      questionData,
+      [focus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never
+    );
+
+    expect(result.validation.valid).toBe(true);
+    expect(result.note.markdownNote).toContain('为什么这种方法能够降低过拟合？');
+    expect(result.note.contentMappings.some(mapping => mapping.contentRole === 'open_question'))
+      .toBe(true);
   });
 
   it('reviews and corrects an unsupported number without extra model rounds', async () => {

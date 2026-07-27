@@ -62,6 +62,8 @@ interface ExportDependencies {
   zotero?: any;
 }
 
+const MAX_XMIND_FILE_BYTES = 25 * 1024 * 1024;
+
 export async function exportMarkdownFile(
   parentWindow: any,
   documentTitle: string,
@@ -81,17 +83,47 @@ export async function exportMarkdownFile(
 export async function exportMindmapFile(
   parentWindow: any,
   documentTitle: string,
-  markmapMarkdown: string,
+  opml: string,
   dependencies: ExportDependencies = {}
 ): Promise<string | null> {
   return exportTextFile(
     parentWindow,
     documentTitle,
-    markmapMarkdown,
-    '导出 Mermaid 思维导图',
+    opml,
+    '导出 OPML 思维导图',
     'AI思维导图',
-    dependencies
+    dependencies,
+    { extension: 'opml', filterLabel: 'OPML', filterPattern: '*.opml' }
   );
+}
+
+export async function selectXmindFile(
+  parentWindow: any,
+  dependencies: ExportDependencies = {}
+): Promise<{ path: string; data: Uint8Array } | null> {
+  const zotero = dependencies.zotero || Zotero;
+  const FilePickerClass = dependencies.FilePicker
+    || ChromeUtils.importESModule('chrome://zotero/content/modules/filePicker.mjs').FilePicker;
+  const picker = new FilePickerClass();
+  picker.init(parentWindow, '导入 XMind 思维导图', picker.modeOpen);
+  picker.appendFilter('XMind', '*.xmind');
+  const result = await picker.show();
+  if (result !== picker.returnOK) {
+    return null;
+  }
+  const file = picker.file;
+  const binary = await zotero.File.getBinaryContentsAsync(file, MAX_XMIND_FILE_BYTES + 1);
+  if (binary.length > MAX_XMIND_FILE_BYTES) {
+    throw new Error('XMind 文件超过 25 MB 安全上限。');
+  }
+  const data = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    data[index] = binary.charCodeAt(index) & 0xff;
+  }
+  return {
+    path: typeof file === 'string' ? file : file.path,
+    data
+  };
 }
 
 async function exportTextFile(
@@ -100,19 +132,24 @@ async function exportTextFile(
   content: string,
   dialogTitle: string,
   suffix: string,
-  dependencies: ExportDependencies
+  dependencies: ExportDependencies,
+  format: { extension: string; filterLabel: string; filterPattern: string } = {
+    extension: 'md',
+    filterLabel: 'Markdown',
+    filterPattern: '*.md'
+  }
 ): Promise<string | null> {
   const zotero = dependencies.zotero || Zotero;
   const FilePickerClass = dependencies.FilePicker
     || ChromeUtils.importESModule('chrome://zotero/content/modules/filePicker.mjs').FilePicker;
   const picker = new FilePickerClass();
   picker.init(parentWindow, dialogTitle, picker.modeSave);
-  const fallbackName = `${safeFileBaseName(documentTitle)}_${suffix}.md`;
+  const fallbackName = `${safeFileBaseName(documentTitle)}_${suffix}.${format.extension}`;
   picker.defaultString = zotero.File.getValidFileName
     ? zotero.File.getValidFileName(fallbackName)
     : fallbackName;
-  picker.defaultExtension = 'md';
-  picker.appendFilter('Markdown', '*.md');
+  picker.defaultExtension = format.extension;
+  picker.appendFilter(format.filterLabel, format.filterPattern);
   const result = await picker.show();
   if (result !== picker.returnOK && result !== picker.returnReplace) {
     return null;

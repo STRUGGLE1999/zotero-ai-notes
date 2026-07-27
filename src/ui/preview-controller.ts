@@ -14,11 +14,14 @@ import {
   type SelectedFocus
 } from '../llm/note-pipeline';
 import { markdownToSafeHtml } from '../output/markdown';
-import { buildMermaidMindmap } from '../output/mindmap';
+import { buildMindmapDocument, type MindmapDocument } from '../output/mindmap';
+import { mindmapDocumentToOpml } from '../output/opml';
+import { parseXmindFile } from '../output/xmind';
 import {
   createZoteroChildNote,
   exportMindmapFile,
   exportMarkdownFile,
+  selectXmindFile,
   type NoteMetadata
 } from '../output/zotero-output';
 
@@ -77,8 +80,8 @@ export class PreviewController {
         .filter(topic => selectedMap.has(topic.id))
         .map(topic => ({ ...topic, priority: selectedMap.get(topic.id)! }))
         .sort((first, second) => first.priority - second.priority);
-      if (!focusTopics.length && !extraRequirement.trim()) {
-        throw new Error('请至少选择一个关注重点，或填写本次特别关注的问题。');
+      if (!focusTopics.length) {
+        throw new Error('请至少选择一个由真实批注支持的关注重点。特别要求只能补充已选重点，不能替代批注。');
       }
       this.checkpoint = createNotePipelineCheckpoint(focusTopics);
       this.generationKey = key;
@@ -126,7 +129,7 @@ export class PreviewController {
     if (!markdown.trim()) {
       throw new Error('没有可生成思维导图的已校验笔记。');
     }
-    return buildMermaidMindmap(this.data.document.title, markdown);
+    return buildMindmapDocument(this.data.document.title, markdown);
   }
 
   async validateEdited(markdown: string) {
@@ -159,14 +162,24 @@ export class PreviewController {
     return { path };
   }
 
-  async exportMindmap(markdown: string) {
-    const mindmap = this.buildMindmap(markdown);
+  async exportMindmap(document: MindmapDocument, sheetIndex = 0) {
+    const opml = mindmapDocumentToOpml(document, sheetIndex);
+    const sheet = document.sheets[sheetIndex];
     const path = await exportMindmapFile(
       this.parentWindow,
-      this.data.document.title,
-      mindmap.markdown
+      sheet?.title || document.title || this.data.document.title,
+      opml
     );
     return { path };
+  }
+
+  async importXmind() {
+    const selected = await selectXmindFile(this.parentWindow);
+    if (!selected) {
+      return null;
+    }
+    const mindmap = await parseXmindFile(selected.data);
+    return { ...mindmap, path: selected.path };
   }
 
   private metadata(): NoteMetadata {

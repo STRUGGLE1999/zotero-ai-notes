@@ -107,13 +107,13 @@ describe('Markdown output', () => {
     expect(html).not.toContain('<img src=x>');
   });
 
-  it('exports a Mermaid mindmap with a distinct cross-platform filename', async () => {
+  it('exports an OPML mindmap with a distinct cross-platform filename', async () => {
     const putContentsAsync = vi.fn(async () => undefined);
     class FilePicker {
       modeSave = 1;
       returnOK = 0;
       returnReplace = 2;
-      file = '/Notes/Paper_AI思维导图.md';
+      file = '/Notes/Paper_AI思维导图.opml';
       defaultString = '';
       defaultExtension = '';
       init = vi.fn();
@@ -126,11 +126,11 @@ describe('Markdown output', () => {
         putContentsAsync
       }
     };
-    const mermaid = '```mermaid\nmindmap\n  root((Paper))\n```';
+    const opml = '<?xml version="1.0"?><opml version="2.0"><body/></opml>';
 
-    const path = await exportMindmapFile({}, 'Paper', mermaid, { FilePicker, zotero });
+    const path = await exportMindmapFile({}, 'Paper', opml, { FilePicker, zotero });
 
-    expect(path).toBe('/Notes/Paper_AI思维导图.md');
-    expect(putContentsAsync).toHaveBeenCalledWith(path, mermaid);
+    expect(path).toBe('/Notes/Paper_AI思维导图.opml');
+    expect(putContentsAsync).toHaveBeenCalledWith(path, opml);
   });
 });

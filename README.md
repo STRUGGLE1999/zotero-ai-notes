@@ -1,8 +1,8 @@
 # Zotero AI Notes
 
-面向 Zotero 9 的 AI 论文批注整理插件。它会读取用户在 PDF 中留下的高亮、评论、标签和页码，结合批注附近的原文，生成经过后台校验的 Markdown 笔记，并进一步生成 Mermaid 思维导图。
+面向 Zotero 9 的 AI 论文批注整理插件。它会读取用户在 PDF 中留下的高亮、评论、标签和页码，结合批注附近的原文，生成经过后台校验的 Markdown 笔记，并进一步生成可在 Zotero 内查看、可导入 XMind、可导出 OPML 的思维导图。
 
-> 最新公开测试版：`0.3.8`；已实机验证：macOS + Zotero `9.0.6`。
+> 当前开发测试版与最新公开测试版：`0.4.0`；已实机验证：macOS + Zotero `9.0.6`。
 > Windows / Linux 使用同一套跨平台接口，仍需分别完成一次实机回归。
 
 ## 已实现功能
@@ -14,13 +14,16 @@
 - 建立内部 Evidence 数据，用于约束生成内容和后台校验；
 - 配置 Gemini、OpenAI 兼容、DeepSeek 或自定义服务的 Base URL、API Key 和模型，并测试连接；
 - 自动识别用户关注重点，允许勾选主题并将最多两个主题设为重点；
+- 笔记主题严格由用户选中的批注触发，模型只结合这些批注附近的原文进行解释、关联和组织，不泛化总结整篇论文；
+- 后台检查每个主题是否覆盖真实批注、是否包含上下文解释，并阻止机械复述、虚构用户观点及把用户问题改写成结论；
 - 采用“确认关注重点 → 生成与审查 → 查看与保存”的分阶段界面；
 - 大纲在本地快速整理，笔记生成后先进行本地风险校验；无明确风险时只调用模型 1 次，有风险时才追加模型审查校正，并显示耗时、调用次数和失败原因；
 - 支持真正取消模型请求，并从失败或取消阶段继续重试，保留已完成结果；
 - 生成、编辑和预览自然 Markdown 笔记；
 - 后台检查 Evidence 引用、缺失内容和潜在幻觉；
 - 将结果写回为 Zotero 子笔记，或导出 UTF-8 Markdown；
-- 从已校验笔记生成 Mermaid 思维导图，支持 SVG 预览、源码复制和导出；
+- 从已校验笔记生成本地 SVG 思维导图，支持缩放、拖动和适应窗口；
+- 支持导出 OPML，并导入现代 `.xmind` 文件的普通主题层级和多画布；
 - 用户可见的笔记和思维导图不显示内部 Evidence ID。
 
 ## 工作流程
@@ -31,11 +34,12 @@
 → 定位批注附近原文
 → 建立内部 Evidence
 → 识别用户关注重点
-→ 所选模型规划并生成 Markdown
-→ 本地风险校验，仅在检测到异常 Evidence ID、数字、映射或低置信度时追加模型审查校正
+→ 只保留用户确认主题对应的批注与附近原文
+→ 所选模型围绕批注解释、关联并生成 Markdown
+→ 本地风险校验，仅在检测到偏题、机械复述、用户观点误写、异常 Evidence ID、数字、映射或低置信度时追加模型审查校正
 → 用户预览与编辑
 → 写回 Zotero / 导出 Markdown
-→ 生成 Mermaid 思维导图
+→ 生成学术风格思维导图 / 导入 XMind / 导出 OPML
 ```
 
 ## macOS 安装与使用教程
@@ -57,7 +61,7 @@ Zotero 版本可以从 macOS 顶部菜单“Zotero → 关于 Zotero”查看。
 
 #### 方式 A：从 GitHub Releases 下载（推荐）
 
-- [下载最新公开测试版 0.3.8](https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.3.8/zotero-ai-notes-0.3.8.xpi)
+- [下载最新公开测试版 0.4.0](https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.4.0/zotero-ai-notes-0.4.0.xpi)
 - [查看并下载全部历史版本](https://github.com/STRUGGLE1999/zotero-ai-notes/releases)
 
 下载后直接进入下一步，不要解压 XPI 文件。如果浏览器尝试打开 `.xpi`，请右键下载链接并选择“链接另存为”。
@@ -76,7 +80,7 @@ npm run build
 构建成功后，可以在项目根目录看到：
 
 ```text
-zotero-ai-notes-0.3.8.xpi
+zotero-ai-notes-0.4.0.xpi
 ```
 
 如需在安装前完整检查安装包，可继续执行：
@@ -93,7 +97,7 @@ node scripts/verify-xpi.js
 2. 点击 macOS 顶部菜单“工具 → 插件”；
 3. 在插件管理器右上角点击齿轮按钮；
 4. 选择“Install Plugin From File…”或“从文件安装插件…”；
-5. 选择从源码构建的 `zotero-ai-notes-0.3.8.xpi`，或从 Releases 下载的公开版本 XPI；
+5. 选择从源码构建的 `zotero-ai-notes-0.4.0.xpi`，或从 Releases 下载的公开版本 XPI；
 6. 在确认窗口中允许安装；
 7. 检查插件列表中是否出现对应版本的 `Zotero AI Notes`，并确认状态为启用。
 
@@ -158,9 +162,10 @@ API Key 只保存在本机 Zotero/Firefox Login Manager 中。设置页不会回
 - **校验当前内容**：修改后重新执行后台校验；
 - **写回 Zotero**：在当前论文下创建新的子笔记，不覆盖已有笔记；
 - **导出 Markdown**：通过 macOS 保存窗口选择文件名和保存位置；
-- **查看思维导图**：切换到“思维导图”标签查看 Mermaid SVG；
-- **复制 Mermaid 源码**：复制后可粘贴到支持 Mermaid 的 Markdown 工具；
-- **导出思维导图**：保存包含 Mermaid `mindmap` 源码的 UTF-8 Markdown 文件。
+- **查看思维导图**：切换到“思维导图”标签查看本地 SVG 导图；
+- **浏览导图**：使用缩放、拖动和“适应窗口”浏览大图；
+- **导入 XMind**：第一步即可直接导入，不依赖 AI 生成；支持现代 `.xmind` 的普通主题层级，多画布文件可切换画布；
+- **导出 OPML**：将生成或导入的当前画布保存为 UTF-8 OPML 文件。
 
 ### 9. 完整流程测试清单
 
@@ -179,7 +184,9 @@ API Key 只保存在本机 Zotero/Firefox Login Manager 中。设置页不会回
 - [ ] 正式笔记中没有类似 `E-XXXX-1-01` 的内部 Evidence ID；
 - [ ] “写回 Zotero”创建了新笔记，没有覆盖旧笔记，顶部状态会结束并显示“已写回 Zotero”；
 - [ ] Markdown 文件能够正常保存和打开；
-- [ ] 思维导图能显示节点，Mermaid 源码能够复制和导出。
+- [ ] 思维导图能显示节点，页面不出现源码区域，缩放和适应窗口可用；
+- [ ] OPML 文件能够正常保存并由 XMind 导入；
+- [ ] 现代 `.xmind` 文件无需先生成笔记即可导入，且不会覆盖 Markdown 或 Zotero 笔记。
 
 ### 10. macOS 常见问题
 
@@ -220,12 +227,12 @@ API Key 只保存在本机 Zotero/Firefox Login Manager 中。设置页不会回
 
 #### 思维导图没有显示 SVG
 
-插件仍会保留树状结构和 Mermaid 源码。可以先复制或导出源码，再将错误信息反馈到项目 Issues。
+插件会自动显示树状结构回退视图。请记录错误提示并反馈到项目 Issues；导入文件和原始 Markdown 不会被修改。
 
 ## 数据与隐私
 
 - 插件不会把整篇 PDF 上传给模型；
-- 只发送生成所需的文献标题、批注、用户评论、标签、页码和附近原文；
+- 只发送用户确认主题所需的文献标题、批注、用户评论、标签、页码和附近原文；
 - API Key 不会进入请求日志；
 - 写回 Zotero 时创建新的子笔记，不覆盖已有笔记；
 - 调试 JSON 和阶段性 Markdown 使用系统临时目录或用户选择的保存位置。
@@ -249,14 +256,14 @@ npm run build
 构建完成后，项目根目录会生成：
 
 ```text
-zotero-ai-notes-0.3.8.xpi
+zotero-ai-notes-0.4.0.xpi
 ```
 
 当前自动验证结果：
 
 - TypeScript 类型检查通过；
 - ESLint 0 个错误；
-- 12 个测试文件、56 个测试全部通过；
+- 14 个测试文件、67 个测试全部通过；
 - XPI 结构与压缩包完整性检查通过。
 
 ## 项目结构
@@ -267,7 +274,7 @@ src/config/             配置与凭据存储
 src/zotero/             文献、附件、批注和右键菜单
 src/evidence/           PDF 上下文定位与 Evidence 构建
 src/llm/                Gemini 请求、生成和后台校验
-src/output/             Markdown、Zotero 写回与 Mermaid 输出
+src/output/             Markdown、Zotero 写回、导图树、OPML 与 XMind 适配
 src/ui/                 预览窗口控制器
 tests/                  自动测试
 docs/                   PRD、架构、技术、Prompt 和阶段验收文档
@@ -298,6 +305,7 @@ scripts/                构建及 XPI 验证脚本
 | `0.3.6` | 生成阶段、耗时、调用次数、真正取消和从当前阶段重试 |
 | `0.3.7` | 修复 Zotero 沙箱取消机制导致的识别失败，并完善中英文数字单位校验 |
 | `0.3.8` | 分阶段生成界面、重点主题交互、本地大纲与按风险追加模型审查、精确到秒的笔记标题、写回保护及 XHTML 分段预览修复 |
+| `0.4.0` | 批注驱动的解释型笔记、本地学术风格 SVG 导图、无源码界面、缩放拖动、OPML 导出和现代 XMind 导入 |
 
 详细变更见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -307,14 +315,14 @@ scripts/                构建及 XPI 验证脚本
 
 GitHub Releases 只发布值得用户集中下载的版本：新的次版本或主版本、重要功能里程碑、修复无法安装/启动/生成/数据安全问题的关键补丁，以及明确面向用户的公开测试版。内部测试版和普通小修复可以只保留在代码与 CHANGELOG 中，不必逐个创建 Release。跨平台稳定版门槛达成前，`0.x` Release 默认标记为 Pre-release。
 
-`0.3.8` 明显减少了常规生成路径中的模型调用，重构了核心交互，并修复了笔记预览无法正确分段的问题，因此作为公开 Pre-release 发布。更完整的规则见 [AGENTS.md](AGENTS.md)。
+`0.4.0` 增加 OPML/XMind 导入导出和本地学术风格导图，并将笔记生成调整为由用户选中批注决定主题、附近原文提供解释边界，因此作为功能里程碑 Pre-release 发布。更完整的规则见 [AGENTS.md](AGENTS.md)。
 
 ## 后续计划
 
 - 在 Windows Zotero 9 和 Linux Zotero 9 上完成实机回归；
 - 优化无文本 PDF、扫描件和复杂排版的上下文定位；
 - 增加可配置的笔记模板；
-- 在 Mermaid 稳定后评估 XMind 格式导出；
+- 增加旧版 `content.xml` XMind 文件兼容，并评估关系线、概要和附件的有限导入；
 - 继续验证 GitHub Releases 自动更新在 Windows 和 Linux 上的兼容性。
 
 ## 许可证

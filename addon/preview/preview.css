@@ -259,17 +259,6 @@ textarea {
   line-height: 1.55;
 }
 
-#mindmap-source {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 150px;
-  margin-top: 6px;
-  padding: 10px;
-  resize: vertical;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  line-height: 1.45;
-}
-
 button {
   min-height: 30px;
   padding: 5px 12px;
@@ -482,27 +471,87 @@ button.primary:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 14px;
   margin-bottom: 12px;
 }
 
-.mindmap-tree,
-.mindmap-svg {
-  min-height: 240px;
-  margin-bottom: 16px;
-  padding: 14px;
+.mindmap-heading,
+.mindmap-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mindmap-heading {
+  min-width: 0;
+}
+
+.mindmap-controls {
+  flex: none;
+}
+
+#mindmap-sheet-select {
+  max-width: 220px;
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: Field;
+  color: FieldText;
+}
+
+.zoom-label {
+  min-width: 42px;
+  color: var(--muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+#mindmap-zoom-out,
+#mindmap-zoom-in {
+  width: 32px;
+  padding-inline: 0;
+  font-size: 17px;
+}
+
+.mindmap-canvas {
+  position: relative;
+  box-sizing: border-box;
+  min-height: 420px;
+  height: min(58vh, 610px);
+  padding: 16px;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: Canvas;
+  border-radius: 10px;
+  background: #f7f7f5;
+  cursor: grab;
+  overscroll-behavior: contain;
+}
+
+.mindmap-canvas.dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.mindmap-svg {
+  display: flex;
+  min-width: 100%;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
 }
 
 .mindmap-svg svg {
   display: block;
-  width: 100%;
-  min-width: 620px;
-  height: auto;
-  margin: 0 auto;
+  flex: none;
+  border-radius: 6px;
+}
+
+.mindmap-tree {
+  min-height: 240px;
+  padding: 14px;
+  border-radius: 8px;
+  background: Canvas;
+  cursor: default;
 }
 
 .mindmap-tree ul {
@@ -539,9 +588,15 @@ button.primary:disabled {
 }
 
 .mindmap-tree > ul > li > .mindmap-node {
-  border-color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 12%, Canvas);
+  border-color: #a53a43;
+  background: color-mix(in srgb, #a53a43 10%, Canvas);
   font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+  .mindmap-canvas {
+    background: #202124;
+  }
 }
 
 @media (max-width: 1100px) {

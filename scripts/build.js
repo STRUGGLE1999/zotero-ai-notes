@@ -56,9 +56,6 @@ function copyFiles() {
     fs.copyFileSync(srcPath, destPath);
   }
 
-  const mermaidSource = path.join(rootDir, 'node_modules', 'mermaid', 'dist', 'mermaid.min.js');
-  const mermaidDestination = path.join(buildDir, 'preview', 'mermaid.min.js');
-  fs.copyFileSync(mermaidSource, mermaidDestination);
 }
 
 async function createXPI() {
@@ -109,6 +106,9 @@ async function buildOnce() {
     target: 'ES2020',
     outfile: path.join(buildDir, 'bootstrap.js'),
     platform: 'neutral',
+    alias: {
+      jszip: path.join(rootDir, 'node_modules', 'jszip', 'dist', 'jszip.min.js')
+    },
     format: 'iife',
     globalName: 'ZoteroAINotes',
     external: ['zotero-types'],

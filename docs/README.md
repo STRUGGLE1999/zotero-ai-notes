@@ -17,9 +17,11 @@
 - [2026-07-14：第一阶段插件空壳完成](progress/2026-07-14-plugin-shell-complete.md)
 - [2026-07-14：第二阶段文献与批注数据读取完成](progress/2026-07-14-annotation-data-complete.md)
 - [2026-07-14：第三阶段 PDF 上下文与 Evidence 完成](progress/2026-07-14-pdf-context-evidence-complete.md)
+- [2026-07-27：批注驱动的解释型笔记生成完成](progress/2026-07-27-annotation-guided-note-generation.md)
 - [2026-07-14：第四阶段 Gemini 与 Markdown 完成](progress/2026-07-14-gemini-markdown-complete.md)
 - [2026-07-14：第五阶段完整闭环完成](progress/2026-07-14-full-loop-complete.md)
 - [2026-07-14：第六阶段 Mermaid 思维导图完成](progress/2026-07-14-mermaid-mindmap-complete.md)
+- [2026-07-24：XMind / OPML 思维导图升级](progress/2026-07-24-xmind-opml-mindmap.md)
 
 ## 目录结构
 
