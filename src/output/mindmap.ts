@@ -1,11 +1,24 @@
 export interface MindmapNode {
+  id: string;
   text: string;
   children: MindmapNode[];
+  note?: string;
 }
 
-export interface MermaidMindmapResult {
-  source: string;
-  markdown: string;
+export interface MindmapSheet {
+  id: string;
+  title: string;
+  root: MindmapNode;
+}
+
+export interface MindmapDocument {
+  title: string;
+  sheets: MindmapSheet[];
+  source: 'generated' | 'xmind';
+}
+
+export interface MindmapResult {
+  document: MindmapDocument;
   tree: MindmapNode;
   nodeCount: number;
   maxDepth: number;
@@ -13,7 +26,7 @@ export interface MermaidMindmapResult {
 }
 
 const EVIDENCE_ID_PATTERN = /\s*\[(?:E-[A-Z0-9-]+)(?:\s*,\s*E-[A-Z0-9-]+)*\]/gi;
-const MAX_NODE_LENGTH = 30;
+const MAX_NODE_LENGTH = 72;
 
 function cleanInline(value: string): string {
   return value
@@ -37,31 +50,20 @@ function conciseNode(value: string): string {
     ...['：', ':', '，', ',', '。', '；', ';', '！', '!', '？', '?']
       .map(character => candidate.lastIndexOf(character))
   );
-  if (boundary >= 6) {
+  if (boundary >= 12) {
     return candidate.slice(0, boundary).trim();
   }
   const wordBoundary = candidate.lastIndexOf(' ');
-  return wordBoundary >= 6 ? candidate.slice(0, wordBoundary).trim() : candidate.trim();
-}
-
-function mermaidLabel(value: string): string {
-  return value
-    .replace(/\(/g, '（')
-    .replace(/\)/g, '）')
-    .replace(/\[/g, '【')
-    .replace(/\]/g, '】')
-    .replace(/\{/g, '〔')
-    .replace(/\}/g, '〕')
-    .replace(/"/g, '“');
+  return wordBoundary >= 12 ? candidate.slice(0, wordBoundary).trim() : candidate.trim();
 }
 
 function appendNode(
   root: MindmapNode,
   stack: MindmapNode[],
-  sourceLines: string[],
   depth: number,
   value: string,
-  seen: Set<string>
+  seen: Set<string>,
+  nextID: () => string
 ): boolean {
   const text = conciseNode(value);
   const safeDepth = Math.max(2, Math.min(5, depth));
@@ -69,22 +71,30 @@ function appendNode(
     return false;
   }
   seen.add(`${safeDepth}:${text}`);
-  const node: MindmapNode = { text, children: [] };
+  const node: MindmapNode = { id: nextID(), text, children: [] };
   const parent = stack[safeDepth - 2] || root;
   parent.children.push(node);
   stack[safeDepth - 1] = node;
   stack.length = safeDepth;
-  sourceLines.push(`${'  '.repeat(safeDepth)}${mermaidLabel(text)}`);
   return true;
 }
 
-export function buildMermaidMindmap(
+export function countMindmapNodes(node: MindmapNode): number {
+  return 1 + node.children.reduce((total, child) => total + countMindmapNodes(child), 0);
+}
+
+export function mindmapDepth(node: MindmapNode): number {
+  return node.children.length ? 1 + Math.max(...node.children.map(mindmapDepth)) : 1;
+}
+
+export function buildMindmapDocument(
   documentTitle: string,
   markdownNote: string
-): MermaidMindmapResult {
+): MindmapResult {
   const title = conciseNode(documentTitle) || '文献笔记';
-  const root: MindmapNode = { text: title, children: [] };
-  const output = ['mindmap', `  root((${mermaidLabel(title)}))`];
+  let sequence = 0;
+  const nextID = () => `generated-${++sequence}`;
+  const root: MindmapNode = { id: nextID(), text: title, children: [] };
   const stack: MindmapNode[] = [root];
   const seen = new Set<string>();
   const warnings: string[] = [];
@@ -101,7 +111,7 @@ export function buildMermaidMindmap(
     const value = paragraph.join(' ').trim();
     paragraph = [];
     if (value) {
-      appendNode(root, stack, output, currentDepth + 1, value, seen);
+      appendNode(root, stack, currentDepth + 1, value, seen, nextID);
     }
   };
 
@@ -118,14 +128,14 @@ export function buildMermaidMindmap(
     if (heading) {
       flushParagraph();
       currentDepth = Math.min(5, heading[1].length - minimumHeading + 2);
-      appendNode(root, stack, output, currentDepth, heading[2], seen);
+      appendNode(root, stack, currentDepth, heading[2], seen, nextID);
       continue;
     }
     const listItem = line.match(/^(\s*)(?:[-*+] |\d+[.)] )(.+)$/);
     if (listItem) {
       flushParagraph();
       const indentationDepth = Math.floor(listItem[1].replace(/\t/g, '  ').length / 2);
-      appendNode(root, stack, output, currentDepth + 1 + indentationDepth, listItem[2], seen);
+      appendNode(root, stack, currentDepth + 1 + indentationDepth, listItem[2], seen, nextID);
       continue;
     }
     if (!line.trim() || /^---+$/.test(line.trim())) {
@@ -136,24 +146,21 @@ export function buildMermaidMindmap(
   }
   flushParagraph();
 
-  const countNodes = (node: MindmapNode): number =>
-    1 + node.children.reduce((total, child) => total + countNodes(child), 0);
-  const treeDepth = (node: MindmapNode): number =>
-    node.children.length ? 1 + Math.max(...node.children.map(treeDepth)) : 1;
-  const nodeCount = countNodes(root);
-  const maxDepth = treeDepth(root);
-
+  const nodeCount = countMindmapNodes(root);
+  const maxDepth = mindmapDepth(root);
   if (nodeCount < 2) {
     warnings.push('笔记层级内容过少，思维导图只有根节点。');
   }
   if (documentTitle.trim().length > MAX_NODE_LENGTH) {
-    warnings.push('文献标题已缩短为不超过 30 个字符的根节点。');
+    warnings.push('文献标题已缩短为不超过 72 个字符的根节点。');
   }
 
-  const source = output.join('\n');
   return {
-    source,
-    markdown: `\`\`\`mermaid\n${source}\n\`\`\``,
+    document: {
+      title,
+      source: 'generated',
+      sheets: [{ id: 'generated-sheet-1', title, root }]
+    },
     tree: root,
     nodeCount,
     maxDepth,

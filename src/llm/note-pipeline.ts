@@ -56,6 +56,14 @@ export interface ContentMapping {
   id: string;
   generatedText: string;
   sourceKind: 'document' | 'user_annotation' | 'synthesis';
+  contentRole:
+    | 'annotation_summary'
+    | 'context_explanation'
+    | 'cross_annotation_synthesis'
+    | 'user_comment'
+    | 'open_question';
+  focusTopicIds: string[];
+  annotationIds: string[];
   evidenceIds: string[];
   confidence: 'high' | 'medium' | 'low';
   needsReview: boolean;
@@ -302,6 +310,25 @@ function uniqueAnnotations(data: EvidenceDebugData) {
   return [...annotations.values()];
 }
 
+function evidenceForFocus(data: EvidenceDebugData, focusTopics: FocusTopic[]): EvidenceUnit[] {
+  if (!focusTopics.length) {
+    return data.evidenceUnits;
+  }
+  const annotationIds = new Set(focusTopics.flatMap(topic => topic.annotationIds));
+  return data.evidenceUnits.filter(unit => annotationIds.has(unit.annotationId));
+}
+
+function looksLikeQuestion(text: string): boolean {
+  return /[?？]|为什么|为何|如何|是否|能否|什么|哪些|哪种|怎么/.test(text);
+}
+
+function comparableText(text: string): string {
+  return text
+    .normalize('NFC')
+    .toLocaleLowerCase()
+    .replace(/[\s\p{P}\p{S}]+/gu, '');
+}
+
 function normalizeFocusResult(raw: RawFocusResult, data: EvidenceDebugData): FocusResult {
   const knownAnnotationIds = new Set(data.evidenceUnits.map(unit => unit.annotationId));
   const candidateTopics = raw.focus_topics || raw.focusTopics || [];
@@ -349,6 +376,19 @@ function normalizeGeneratedNote(raw: RawGeneratedNote): GeneratedNote {
       ['document', 'user_annotation', 'synthesis'] as const,
       'document'
     ),
+    contentRole: enumValue(
+      mapping.content_role || mapping.contentRole,
+      [
+        'annotation_summary',
+        'context_explanation',
+        'cross_annotation_synthesis',
+        'user_comment',
+        'open_question'
+      ] as const,
+      'annotation_summary'
+    ),
+    focusTopicIds: identifierArray(mapping.focus_topic_ids || mapping.focusTopicIds),
+    annotationIds: identifierArray(mapping.annotation_ids || mapping.annotationIds),
     evidenceIds: identifierArray(mapping.evidence_ids || mapping.evidenceIds),
     confidence: enumValue(mapping.confidence, ['high', 'medium', 'low'] as const, 'medium'),
     needsReview: mapping.needs_review === true || mapping.needsReview === true
@@ -430,7 +470,11 @@ function extractNumbers(text: string): Array<{ raw: string; normalized: string }
   );
 }
 
-function staticValidation(note: GeneratedNote, data: EvidenceDebugData): { errors: string[]; warnings: string[] } {
+function staticValidation(
+  note: GeneratedNote,
+  data: EvidenceDebugData,
+  focusTopics: FocusTopic[] = []
+): { errors: string[]; warnings: string[] } {
   const evidenceMap = new Map(data.evidenceUnits.map(unit => [unit.id, unit]));
   const errors: string[] = [];
   const warnings: string[] = [...note.warnings];
@@ -469,15 +513,103 @@ function staticValidation(note: GeneratedNote, data: EvidenceDebugData): { error
       warnings.push(`内容映射 ${mapping.id} 被模型标记为需要复核。`);
     }
   }
+
+  if (focusTopics.length) {
+    const selectedEvidence = evidenceForFocus(data, focusTopics);
+    const allowedEvidenceIds = new Set(selectedEvidence.map(unit => unit.id));
+    const allowedAnnotationIds = new Set(selectedEvidence.map(unit => unit.annotationId));
+    const knownFocusIds = new Set(focusTopics.map(topic => topic.id));
+
+    for (const mapping of note.contentMappings) {
+      const invalidFocusIds = mapping.focusTopicIds.filter(id => !knownFocusIds.has(id));
+      if (!mapping.focusTopicIds.length || invalidFocusIds.length) {
+        errors.push(
+          `内容映射 ${mapping.id} 未绑定已选关注主题` +
+          (invalidFocusIds.length ? `：${invalidFocusIds.join(', ')}` : '。')
+        );
+      }
+      const invalidAnnotationIds = mapping.annotationIds.filter(id => !allowedAnnotationIds.has(id));
+      if (!mapping.annotationIds.length || invalidAnnotationIds.length) {
+        errors.push(
+          `内容映射 ${mapping.id} 未绑定已选批注` +
+          (invalidAnnotationIds.length ? `：${invalidAnnotationIds.join(', ')}` : '。')
+        );
+      }
+      const unselectedEvidenceIds = mapping.evidenceIds.filter(id => !allowedEvidenceIds.has(id));
+      if (unselectedEvidenceIds.length) {
+        errors.push(`内容映射 ${mapping.id} 使用了未选主题的 Evidence：${unselectedEvidenceIds.join(', ')}`);
+      }
+
+      const mappedEvidence = mapping.evidenceIds
+        .map(id => evidenceMap.get(id))
+        .filter((unit): unit is EvidenceUnit => Boolean(unit));
+      if (
+        (mapping.sourceKind === 'user_annotation' || mapping.contentRole === 'user_comment')
+        && !mappedEvidence.some(unit => unit.userComment.trim())
+      ) {
+        errors.push(`内容映射 ${mapping.id} 把不存在的用户评论写成了用户观点。`);
+      }
+      if (mapping.contentRole === 'open_question' && !looksLikeQuestion(mapping.generatedText)) {
+        errors.push(`内容映射 ${mapping.id} 没有把用户问题保留为问题。`);
+      }
+      if (
+        mapping.contentRole === 'cross_annotation_synthesis'
+        && new Set(mapping.annotationIds).size < 2
+      ) {
+        errors.push(`内容映射 ${mapping.id} 声称综合多条批注，但只绑定了一条批注。`);
+      }
+      if (mapping.contentRole === 'context_explanation') {
+        const generated = comparableText(mapping.generatedText);
+        if (generated && mappedEvidence.some(unit => comparableText(unit.annotationText) === generated)) {
+          errors.push(`内容映射 ${mapping.id} 只是逐字重复批注，没有解释上下文。`);
+        }
+      }
+    }
+
+    for (const topic of focusTopics) {
+      const topicMappings = note.contentMappings.filter(mapping =>
+        mapping.focusTopicIds.includes(topic.id)
+        && mapping.annotationIds.some(id => topic.annotationIds.includes(id))
+      );
+      if (!topicMappings.length) {
+        errors.push(`已选关注主题“${topic.title}”没有出现在笔记中。`);
+        continue;
+      }
+      const topicEvidence = selectedEvidence.filter(unit => topic.annotationIds.includes(unit.annotationId));
+      const hasContext = topicEvidence.some(unit => unit.sourceType === 'annotation_context');
+      const hasInterpretation = topicMappings.some(mapping =>
+        mapping.contentRole === 'context_explanation'
+        || mapping.contentRole === 'cross_annotation_synthesis'
+      );
+      if (hasContext && !hasInterpretation) {
+        errors.push(`已选关注主题“${topic.title}”只有批注复述，缺少原文上下文解释或综合。`);
+      }
+
+      const questionAnnotationIds = topicEvidence
+        .filter(unit => looksLikeQuestion(unit.userComment))
+        .map(unit => unit.annotationId);
+      for (const annotationId of questionAnnotationIds) {
+        const questionPreserved = topicMappings.some(mapping =>
+          mapping.contentRole === 'open_question'
+          && mapping.annotationIds.includes(annotationId)
+          && looksLikeQuestion(mapping.generatedText)
+        );
+        if (!questionPreserved) {
+          errors.push(`批注 ${annotationId} 中的用户问题没有作为问题保留。`);
+        }
+      }
+    }
+  }
   return { errors, warnings };
 }
 
 function combineValidation(
   note: GeneratedNote,
   data: EvidenceDebugData,
-  review: ReviewResult
+  review: ReviewResult,
+  focusTopics: FocusTopic[] = []
 ): ValidationResult {
-  const staticResult = staticValidation(note, data);
+  const staticResult = staticValidation(note, data, focusTopics);
   const knownMappings = new Set(note.contentMappings.map(mapping => mapping.id));
   const reviewedMappings = new Set(review.reviewResults.map(item => item.mappingId));
   for (const id of knownMappings) {
@@ -518,8 +650,12 @@ function localReview(note: GeneratedNote): ReviewResult {
   };
 }
 
-function requiresModelReview(note: GeneratedNote, data: EvidenceDebugData): boolean {
-  const local = staticValidation(note, data);
+function requiresModelReview(
+  note: GeneratedNote,
+  data: EvidenceDebugData,
+  focusTopics: FocusTopic[] = []
+): boolean {
+  const local = staticValidation(note, data, focusTopics);
   return local.errors.length > 0 || note.contentMappings.some(mapping =>
     mapping.needsReview || mapping.confidence !== 'high'
   );
@@ -611,37 +747,32 @@ export async function identifyFocusTopics(
 
 function buildOutline(
   data: EvidenceDebugData,
-  focusTopics: FocusTopic[],
-  extraRequirement: string
+  focusTopics: FocusTopic[]
 ): Promise<OutlineResult> {
-  const allEvidenceIds = data.evidenceUnits.map(unit => unit.id);
+  const selectedEvidence = evidenceForFocus(data, focusTopics);
+  const selectedEvidenceIds = selectedEvidence.map(unit => unit.id);
   const sections: OutlineSection[] = focusTopics.map((topic, index) => {
     const evidence = data.evidenceUnits.filter(unit => topic.annotationIds.includes(unit.annotationId));
+    const userQuestions = evidence
+      .map(unit => unit.userComment.trim())
+      .filter(comment => comment && looksLikeQuestion(comment));
     return {
       id: `S${index + 1}`,
       heading: topic.title,
-      purpose: topic.description || topic.reason || '整理用户关注的内容',
-      sourcePlan: evidence.some(unit => unit.userComment || unit.tags.length)
-        ? ['document', 'user_annotation']
-        : ['document'],
+      purpose:
+        `以用户选中的批注为锚点，解释其附近原文，并整理“${
+          topic.description || topic.reason || topic.title
+        }”`,
+      sourcePlan: evidence.some(unit => unit.userComment.trim())
+        ? ['document', 'user_annotation', 'synthesis']
+        : ['document', 'synthesis'],
       evidenceIds: evidence.map(unit => unit.id),
       annotationIds: topic.annotationIds,
-      questionsToAnswer: []
+      questionsToAnswer: userQuestions
     };
   });
-  if (!sections.length && extraRequirement.trim()) {
-    sections.push({
-      id: 'S1',
-      heading: '本次补充要求',
-      purpose: extraRequirement.trim(),
-      sourcePlan: ['document'],
-      evidenceIds: allEvidenceIds,
-      annotationIds: [],
-      questionsToAnswer: [extraRequirement.trim()]
-    });
-  }
   const result: OutlineResult = {
-    articleCore: { problem: '', method: '', conclusion: '', evidenceIds: allEvidenceIds },
+    articleCore: { problem: '', method: '', conclusion: '', evidenceIds: selectedEvidenceIds },
     userFocusRelation: focusTopics.map(topic => topic.title).join('、'),
     outline: sections,
     missingInformation: [],
@@ -661,6 +792,7 @@ async function generateNaturalNote(
   client: GeminiClient,
   signal?: RequestCancellationSignal
 ): Promise<GeneratedNote> {
+  const selectedEvidence = evidenceForFocus(data, focusTopics);
   const raw = await client.generateJson<RawGeneratedNote>(config, [
     {
       role: 'system',
@@ -668,6 +800,7 @@ async function generateNaturalNote(
         '你是可靠的中文文献笔记助手。先在内部规划，再严格依据大纲、Evidence 和用户批注生成自然 Markdown。' +
         '正式 markdown_note 中不得显示 Evidence ID、Mapping ID、来源类型或“AI 推断”等技术标签。' +
         '不得编造数字、作者结论、适用场景或用户观点。用户问题不能改写为确定结论。' +
+        '标注决定写什么，附近原文决定理解边界；你的职责是解释、关联和组织，不是总结整篇论文，也不是改写高亮。' +
         '输出前在内部逐条核对所有陈述；找不到直接 Evidence 的内容必须删除，不要留给后续审查修复。' +
         'Markdown 必须使用 ## 分节，段落之间留空行，每段 2–4 句。只输出 JSON。'
     },
@@ -683,10 +816,18 @@ async function generateNaturalNote(
         },
         approved_outline: outline,
         extra_requirement: extraRequirement,
-        evidence_units: data.evidenceUnits.map(evidenceForPrompt),
+        evidence_units: selectedEvidence.map(evidenceForPrompt),
         rules: [
+          '每个正文主题都必须由 confirmed_focus_topics 中的已选主题和批注触发，不得根据论文标题增加主题',
+          'extra_requirement 只能调整已选主题的解释角度或详略，不能引入未被已选批注支持的新主题',
+          '每个主题都要在概括标注之后，结合附近 context 解释其含义、机制、前因后果或与论文方法的关系；不得只有高亮复述',
+          '只有两条以上批注确实存在共同逻辑时才能做跨批注综合，并绑定全部相关 annotation_ids',
+          '没有 user_comment 时不得虚构“用户认为”“我的理解”等用户观点',
+          'user_comment 是问题时必须保持疑问形式，除非 Evidence 直接给出答案；即使有答案，也要先准确保留原问题',
+          '必要论文背景只用于帮助理解当前标注，不得扩展成整篇论文摘要',
           'markdown_note 可直接阅读，不显示任何 E-... 内部编号',
-          'markdown_note 至少包含两个 ## 二级标题，标题和段落前后使用真实换行',
+          '每个已选主题使用一个 ## 二级标题；只有一个主题时不得为了凑数量增加无关章节',
+          '标题和段落前后使用真实换行',
           '不要把整篇笔记写成一个超长段落',
           'content_mappings 仅供后台校验',
           'generated_text 必须是 markdown_note 中对应内容的原文片段',
@@ -696,7 +837,9 @@ async function generateNaturalNote(
         output_schema: {
           title: '', markdown_note: '',
           content_mappings: [{
-            id: 'M1', generated_text: '', source_kind: 'document', evidence_ids: [],
+            id: 'M1', generated_text: '', source_kind: 'document',
+            content_role: 'context_explanation',
+            focus_topic_ids: ['F1'], annotation_ids: ['必须来自已选批注'], evidence_ids: [],
             confidence: 'high', needs_review: false
           }],
           unanswered_questions: [], warnings: []
@@ -710,6 +853,7 @@ async function generateNaturalNote(
 async function reviewAndCorrectNote(
   config: ProviderConfig,
   data: EvidenceDebugData,
+  focusTopics: FocusTopic[],
   note: GeneratedNote,
   client: GeminiClient,
   previousErrors: string[] = [],
@@ -721,6 +865,7 @@ async function reviewAndCorrectNote(
       content:
         '你是独立的文献事实审查员。检查初稿的每条内容映射，并在同一次任务中直接修正无依据内容。' +
         '重点检查数字、归因、用户观点和被误写为结论的问题。最终笔记必须使用 ## 分节和空行分段。' +
+        '同时删除未由已选批注触发的主题，并保证每个主题包含上下文解释，而不是只复述高亮。' +
         '只对修正后的 final_note 逐条审查，只输出 JSON。'
     },
     {
@@ -728,13 +873,23 @@ async function reviewAndCorrectNote(
       content: JSON.stringify({
         task: '审查并直接校正初稿',
         draft_note: note,
+        confirmed_focus_topics: focusTopics,
         previous_validation_errors: previousErrors,
-        evidence_units: data.evidenceUnits.map(evidenceForPrompt),
+        evidence_units: evidenceForFocus(data, focusTopics).map(evidenceForPrompt),
+        balance_rules: [
+          '所有映射必须绑定已选 focus_topic_ids、annotation_ids 和 Evidence',
+          '每个有原文上下文的主题至少包含一个 context_explanation 或 cross_annotation_synthesis',
+          '没有真实 user_comment 时不得使用 user_comment 角色或声称用户观点',
+          '用户问题必须用 open_question 角色并保持疑问形式',
+          '不得加入整篇论文的泛化摘要'
+        ],
         output_schema: {
           final_note: {
             title: '', markdown_note: '',
             content_mappings: [{
-              id: 'M1', generated_text: '', source_kind: 'document', evidence_ids: [],
+              id: 'M1', generated_text: '', source_kind: 'document',
+              content_role: 'context_explanation', focus_topic_ids: ['F1'],
+              annotation_ids: [], evidence_ids: [],
               confidence: 'high', needs_review: false
             }],
             unanswered_questions: [], warnings: []
@@ -806,8 +961,8 @@ export async function generateValidatedNote(
     .filter(topic => selectedMap.has(topic.id))
     .map(topic => ({ ...topic, priority: selectedMap.get(topic.id)! }))
     .sort((first, second) => first.priority - second.priority);
-  if (!focusTopics.length && !extraRequirement.trim()) {
-    throw new Error('请至少选择一个关注重点，或填写本次特别关注的问题。');
+  if (!focusTopics.length) {
+    throw new Error('请至少选择一个由真实批注支持的关注重点。特别要求只能补充已选重点，不能替代批注。');
   }
 
   const checkpoint = options.checkpoint || createNotePipelineCheckpoint(focusTopics);
@@ -872,7 +1027,7 @@ export async function generateValidatedNote(
     switch (checkpoint.nextStage) {
       case 'outline':
         checkpoint.outline = await runLocalStage('outline', () => buildOutline(
-          data, focusTopics, extraRequirement
+          data, focusTopics
         ));
         checkpoint.nextStage = 'note';
         break;
@@ -886,9 +1041,11 @@ export async function generateValidatedNote(
           client,
           options.signal
         ));
-        if (!requiresModelReview(checkpoint.note, data)) {
+        if (!requiresModelReview(checkpoint.note, data, focusTopics)) {
           checkpoint.review = localReview(checkpoint.note);
-          checkpoint.validation = combineValidation(checkpoint.note, data, checkpoint.review);
+          checkpoint.validation = combineValidation(
+            checkpoint.note, data, checkpoint.review, focusTopics
+          );
           for (const stage of checkpoint.stages.filter(item =>
             item.id === 'review' || item.id === 'revision' || item.id === 'rereview'
           )) {
@@ -905,12 +1062,15 @@ export async function generateValidatedNote(
         checkpoint.nextStage = 'review';
         break;
       case 'review': {
+        const initialErrors = staticValidation(checkpoint.note!, data, focusTopics).errors;
         const reviewed = await runStage('review', () => reviewAndCorrectNote(
-          config, data, checkpoint.note!, client, [], options.signal
+          config, data, focusTopics, checkpoint.note!, client, initialErrors, options.signal
         ));
         checkpoint.note = reviewed.note;
         checkpoint.review = reviewed.review;
-        checkpoint.validation = combineValidation(checkpoint.note!, data, checkpoint.review);
+        checkpoint.validation = combineValidation(
+          checkpoint.note!, data, checkpoint.review, focusTopics
+        );
         if (checkpoint.validation.valid) {
           for (const stage of checkpoint.stages.filter(item =>
             item.id === 'revision' || item.id === 'rereview'
@@ -929,11 +1089,19 @@ export async function generateValidatedNote(
       }
       case 'revision': {
         const reviewed = await runStage('revision', () => reviewAndCorrectNote(
-          config, data, checkpoint.note!, client, checkpoint.validation!.errors, options.signal
+          config,
+          data,
+          focusTopics,
+          checkpoint.note!,
+          client,
+          checkpoint.validation!.errors,
+          options.signal
         ));
         checkpoint.note = reviewed.note;
         checkpoint.review = reviewed.review;
-        checkpoint.validation = combineValidation(checkpoint.note!, data, checkpoint.review);
+        checkpoint.validation = combineValidation(
+          checkpoint.note!, data, checkpoint.review, focusTopics
+        );
         checkpoint.stages.find(stage => stage.id === 'rereview')!.status = 'skipped';
         return {
           focusTopics,
@@ -944,7 +1112,9 @@ export async function generateValidatedNote(
       }
       case 'rereview':
         checkpoint.stages.find(stage => stage.id === 'rereview')!.status = 'skipped';
-        checkpoint.validation = combineValidation(checkpoint.note!, data, checkpoint.review!);
+        checkpoint.validation = combineValidation(
+          checkpoint.note!, data, checkpoint.review!, focusTopics
+        );
         return {
           focusTopics,
           outline: checkpoint.outline!,

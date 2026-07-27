@@ -32,6 +32,7 @@
       <html:section id="focus-stage" class="panel stage-panel focus-stage">
         <html:h2>这次笔记要关注什么？</html:h2>
         <html:p class="hint">勾选需要整理的主题；可将最多 2 个主题设为重点，笔记会优先并更详细地展开。</html:p>
+        <html:button id="import-xmind-start-button">直接导入 XMind</html:button>
         <html:div id="focus-loading" class="loading">正在根据批注识别关注重点…</html:div>
         <html:button id="retry-focus-button" hidden="hidden">重新识别关注重点</html:button>
         <html:div id="focus-list" class="focus-list"></html:div>
@@ -65,7 +66,7 @@
       <html:section id="result-stage" class="panel stage-panel result-stage" hidden="hidden">
         <html:div class="panel-title-row">
           <html:div>
-            <html:h2>笔记整理完成</html:h2>
+            <html:h2 id="result-title">笔记整理完成</html:h2>
             <html:div id="focus-result-summary" class="hint"></html:div>
           </html:div>
           <html:button id="adjust-focus-button">重新调整重点</html:button>
@@ -91,13 +92,22 @@
         </html:div>
         <html:div id="mindmap-preview-panel" hidden="hidden">
           <html:div class="mindmap-toolbar">
-            <html:span id="mindmap-summary" class="hint">笔记校验通过后生成 Mermaid 思维导图。</html:span>
-            <html:button id="copy-mindmap-button" disabled="disabled">复制 Mermaid 源码</html:button>
+            <html:div class="mindmap-heading">
+              <html:span id="mindmap-summary" class="hint">笔记校验通过后生成思维导图。</html:span>
+              <html:select id="mindmap-sheet-select" aria-label="选择 XMind 画布" hidden="hidden"></html:select>
+            </html:div>
+            <html:div class="mindmap-controls">
+              <html:button id="import-xmind-button">导入 XMind</html:button>
+              <html:button id="mindmap-zoom-out" title="缩小" aria-label="缩小">−</html:button>
+              <html:span id="mindmap-zoom-label" class="zoom-label">100%</html:span>
+              <html:button id="mindmap-zoom-in" title="放大" aria-label="放大">＋</html:button>
+              <html:button id="mindmap-fit-button">适应窗口</html:button>
+            </html:div>
           </html:div>
-          <html:div id="mindmap-svg" class="mindmap-svg"></html:div>
-          <html:div id="mindmap-tree" class="mindmap-tree" hidden="hidden"></html:div>
-          <html:label for="mindmap-source">Mermaid 源码</html:label>
-          <html:textarea id="mindmap-source" readonly="readonly" spellcheck="false"></html:textarea>
+          <html:div id="mindmap-canvas" class="mindmap-canvas">
+            <html:div id="mindmap-svg" class="mindmap-svg"></html:div>
+            <html:div id="mindmap-tree" class="mindmap-tree" hidden="hidden"></html:div>
+          </html:div>
         </html:div>
       </html:section>
     </html:div>
@@ -106,7 +116,7 @@
       <html:div id="action-message" class="action-message"></html:div>
       <html:div class="footer-actions">
         <html:button id="cancel-button" hidden="hidden">取消生成</html:button>
-        <html:button id="export-mindmap-button" disabled="disabled">导出思维导图</html:button>
+        <html:button id="export-mindmap-button" disabled="disabled">导出 OPML</html:button>
         <html:button id="export-button" disabled="disabled">导出 Markdown</html:button>
         <html:button id="save-button" class="primary" disabled="disabled">写回 Zotero</html:button>
       </html:div>
@@ -114,7 +124,7 @@
     <html:iframe id="mindmap-render-frame"
                  class="mindmap-render-frame"
                  src="render-frame.xhtml"
-                 title="Mermaid renderer"
+                 title="Mindmap renderer"
                  aria-hidden="true"
                  tabindex="-1"></html:iframe>
   </html:main>

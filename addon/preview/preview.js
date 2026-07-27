@@ -5,6 +5,10 @@ var ZoteroAINotes_Preview = {
   busy: false,
   cancellable: false,
   mindmap: null,
+  activeMindmapSheet: 0,
+  renderedMindmap: null,
+  mindmapScale: 1,
+  mindmapDrag: null,
   flowStage: 'focus',
   savedMarkdown: '',
 
@@ -31,6 +35,7 @@ var ZoteroAINotes_Preview = {
     this.globalStatus = document.getElementById('global-status');
     this.focusLoading = document.getElementById('focus-loading');
     this.retryFocusButton = document.getElementById('retry-focus-button');
+    this.importXmindStartButton = document.getElementById('import-xmind-start-button');
     this.focusList = document.getElementById('focus-list');
     this.focusWarnings = document.getElementById('focus-warnings');
     this.focusSelectionSummary = document.getElementById('focus-selection-summary');
@@ -40,6 +45,7 @@ var ZoteroAINotes_Preview = {
     this.generateButton = document.getElementById('generate-button');
     this.retryGenerationButton = document.getElementById('retry-generation-button');
     this.adjustFocusButton = document.getElementById('adjust-focus-button');
+    this.resultTitle = document.getElementById('result-title');
     this.focusStage = document.getElementById('focus-stage');
     this.generationStage = document.getElementById('generation-stage');
     this.resultStage = document.getElementById('result-stage');
@@ -57,10 +63,15 @@ var ZoteroAINotes_Preview = {
     this.editorTab = document.getElementById('editor-tab');
     this.mindmapTab = document.getElementById('mindmap-tab');
     this.mindmapSummary = document.getElementById('mindmap-summary');
+    this.mindmapSheetSelect = document.getElementById('mindmap-sheet-select');
+    this.mindmapCanvas = document.getElementById('mindmap-canvas');
     this.mindmapSvg = document.getElementById('mindmap-svg');
     this.mindmapTree = document.getElementById('mindmap-tree');
-    this.mindmapSource = document.getElementById('mindmap-source');
-    this.copyMindmapButton = document.getElementById('copy-mindmap-button');
+    this.importXmindButton = document.getElementById('import-xmind-button');
+    this.mindmapZoomOut = document.getElementById('mindmap-zoom-out');
+    this.mindmapZoomIn = document.getElementById('mindmap-zoom-in');
+    this.mindmapZoomLabel = document.getElementById('mindmap-zoom-label');
+    this.mindmapFitButton = document.getElementById('mindmap-fit-button');
     this.mindmapRenderFrame = document.getElementById('mindmap-render-frame');
     this.validationSummary = document.getElementById('validation-summary');
     this.actionMessage = document.getElementById('action-message');
@@ -80,6 +91,7 @@ var ZoteroAINotes_Preview = {
     this.retryGenerationButton.addEventListener('click', () => this.generate());
     this.adjustFocusButton.addEventListener('click', () => this.switchStage('focus'));
     this.retryFocusButton.addEventListener('click', () => this.loadFocusTopics());
+    this.importXmindStartButton.addEventListener('click', () => this.importXmind());
     this.validateButton.addEventListener('click', () => this.validateEdited());
     this.saveButton.addEventListener('click', () => this.save());
     this.exportButton.addEventListener('click', () => this.export());
@@ -87,7 +99,17 @@ var ZoteroAINotes_Preview = {
     this.noteTab.addEventListener('click', () => this.showPreview('note'));
     this.editorTab.addEventListener('click', () => this.showPreview('editor'));
     this.mindmapTab.addEventListener('click', () => this.showPreview('mindmap'));
-    this.copyMindmapButton.addEventListener('click', () => this.copyMindmap());
+    this.importXmindButton.addEventListener('click', () => this.importXmind());
+    this.mindmapSheetSelect.addEventListener('change', () => {
+      this.showMindmapSheet(Number(this.mindmapSheetSelect.value));
+    });
+    this.mindmapZoomOut.addEventListener('click', () => this.zoomMindmap(-0.1));
+    this.mindmapZoomIn.addEventListener('click', () => this.zoomMindmap(0.1));
+    this.mindmapFitButton.addEventListener('click', () => this.fitMindmap());
+    this.mindmapCanvas.addEventListener('pointerdown', event => this.startMindmapDrag(event));
+    this.mindmapCanvas.addEventListener('pointermove', event => this.moveMindmapDrag(event));
+    this.mindmapCanvas.addEventListener('pointerup', () => this.stopMindmapDrag());
+    this.mindmapCanvas.addEventListener('pointercancel', () => this.stopMindmapDrag());
     this.cancelButton.addEventListener('click', () => this.cancelOrClose());
     document.getElementById('close-button').addEventListener('click', () => {
       this.controller?.cancelActiveRequest();
@@ -234,6 +256,10 @@ var ZoteroAINotes_Preview = {
       this.dirty = false;
       this.savedMarkdown = '';
       this.applyValidation(result.validation);
+      this.resultTitle.textContent = '笔记整理完成';
+      this.adjustFocusButton.hidden = false;
+      this.noteTab.disabled = false;
+      this.editorTab.disabled = false;
       this.generateButton.textContent = '重新生成';
       this.focusResultSummary.textContent = this.focusSelectionSummary.textContent;
       this.switchStage('result');
@@ -370,50 +396,84 @@ var ZoteroAINotes_Preview = {
 
   async refreshMindmap() {
     const mindmap = this.controller.buildMindmap(this.editor.value);
-    this.mindmap = null;
-    this.mindmapSource.value = mindmap.source;
-    this.mindmapSvg.replaceChildren();
-    this.mindmapTree.hidden = true;
+    await this.setMindmap(mindmap, 0);
+  },
+
+  async setMindmap(mindmap, sheetIndex) {
+    this.mindmap = mindmap;
+    this.activeMindmapSheet = sheetIndex;
+    this.populateMindmapSheets();
+    await this.showMindmapSheet(sheetIndex);
     this.updateActions();
-    const warnings = mindmap.warnings.length
-      ? ` · ${mindmap.warnings.join('；')}`
+  },
+
+  populateMindmapSheets() {
+    this.mindmapSheetSelect.replaceChildren();
+    const sheets = this.mindmap?.document?.sheets || [];
+    for (let index = 0; index < sheets.length; index += 1) {
+      const option = document.createElementNS('http://www.w3.org/1999/xhtml', 'option');
+      option.value = String(index);
+      option.textContent = sheets[index].title || `画布 ${index + 1}`;
+      this.mindmapSheetSelect.append(option);
+    }
+    this.mindmapSheetSelect.value = String(this.activeMindmapSheet);
+    this.mindmapSheetSelect.hidden = sheets.length < 2;
+  },
+
+  async showMindmapSheet(sheetIndex) {
+    const sheet = this.mindmap?.document?.sheets?.[sheetIndex];
+    if (!sheet) return;
+    this.activeMindmapSheet = sheetIndex;
+    this.mindmapSheetSelect.value = String(sheetIndex);
+    this.mindmapSvg.replaceChildren();
+    this.mindmapSvg.hidden = false;
+    this.mindmapTree.hidden = true;
+    this.renderedMindmap = null;
+    const stats = this.mindmapStats(sheet.root);
+    const warnings = this.mindmap.warnings.length
+      ? ` · ${this.mindmap.warnings.join('；')}`
       : '';
-    this.mindmapSummary.textContent =
-      `正在使用 Mermaid 校验并渲染 ${mindmap.nodeCount} 个节点…`;
+    const sourceLabel = this.mindmap.document.source === 'xmind' ? 'XMind 导入' : '学术思维导图';
+    this.mindmapSummary.textContent = `正在渲染 ${stats.nodeCount} 个节点…`;
     this.mindmapSummary.className = 'hint';
     try {
-      const rendered = await this.renderMindmapInFrame(
-        `zotero-ai-mindmap-${Date.now()}`,
-        mindmap.source
-      );
+      const rendered = await this.renderMindmapInFrame(sheet.root);
       this.mindmapSvg.innerHTML = rendered.svg;
-      this.mindmap = mindmap;
+      this.renderedMindmap = rendered;
       this.mindmapSummary.textContent =
-        `Mermaid mindmap · ${mindmap.nodeCount} 个节点 · ${mindmap.maxDepth} 层${warnings}`;
+        `${sourceLabel} · ${stats.nodeCount} 个节点 · ${stats.maxDepth} 层${warnings}`;
       this.mindmapSummary.className = 'hint';
-      this.renderMindmapTree(mindmap.tree);
+      this.renderMindmapTree(sheet.root);
+      window.requestAnimationFrame(() => this.fitMindmap());
     } catch (error) {
-      // Mermaid source is still a valid, exportable deliverable when Zotero's
-      // embedded browser cannot render the SVG. Keep the tree/source preview
-      // available so a renderer-specific failure does not block phase 6.
-      this.mindmap = mindmap;
       this.mindmapSummary.textContent =
-        `Mermaid SVG 渲染失败，已显示结构预览：${this.errorMessage(error)}`;
+        `思维导图渲染失败，已显示结构预览：${this.errorMessage(error)}`;
       this.mindmapSummary.className = 'error';
-      this.renderMindmapTree(mindmap.tree);
+      this.renderMindmapTree(sheet.root);
+      this.mindmapSvg.hidden = true;
       this.mindmapTree.hidden = false;
-    } finally {
-      this.updateActions();
     }
   },
 
-  async renderMindmapInFrame(id, source) {
+  mindmapStats(tree) {
+    let nodeCount = 0;
+    let maxDepth = 0;
+    const visit = (node, depth) => {
+      nodeCount += 1;
+      maxDepth = Math.max(maxDepth, depth);
+      for (const child of node.children) visit(child, depth + 1);
+    };
+    visit(tree, 1);
+    return { nodeCount, maxDepth };
+  },
+
+  async renderMindmapInFrame(tree) {
     const frame = this.mindmapRenderFrame;
-    const getRenderer = () => frame?.contentWindow?.renderMermaidMindmap;
+    const getRenderer = () => frame?.contentWindow?.renderAcademicMindmap;
     if (!getRenderer()) {
       await new Promise((resolve, reject) => {
         const timeout = window.setTimeout(
-          () => reject(new Error('Mermaid 渲染帧加载超时。')),
+          () => reject(new Error('思维导图渲染帧加载超时。')),
           5000
         );
         frame.addEventListener('load', () => {
@@ -424,18 +484,24 @@ var ZoteroAINotes_Preview = {
     }
     const renderer = getRenderer();
     if (typeof renderer !== 'function') {
-      throw new Error('Mermaid 渲染帧未正确初始化。');
+      throw new Error('思维导图渲染帧未正确初始化。');
     }
-    return renderer(id, source);
+    return renderer(tree);
   },
 
   clearMindmap() {
     this.mindmap = null;
-    this.mindmapSource.value = '';
+    this.activeMindmapSheet = 0;
+    this.renderedMindmap = null;
+    this.mindmapScale = 1;
     this.mindmapSvg.replaceChildren();
+    this.mindmapSvg.hidden = false;
     this.mindmapTree.replaceChildren();
-    this.mindmapSummary.textContent = '笔记校验通过后生成 Mermaid 思维导图。';
+    this.mindmapSheetSelect.replaceChildren();
+    this.mindmapSheetSelect.hidden = true;
+    this.mindmapSummary.textContent = '笔记校验通过后生成思维导图。';
     this.mindmapSummary.className = 'hint';
+    this.mindmapZoomLabel.textContent = '100%';
   },
 
   renderMindmapTree(tree) {
@@ -465,23 +531,97 @@ var ZoteroAINotes_Preview = {
     this.noteTab.classList.toggle('active', !showMindmap && !showEditor);
     this.editorTab.classList.toggle('active', showEditor);
     this.mindmapTab.classList.toggle('active', showMindmap);
+    if (showMindmap && this.renderedMindmap) {
+      window.requestAnimationFrame(() => this.fitMindmap());
+    }
   },
 
-  async copyMindmap() {
-    if (!this.mindmap || this.busy) return;
+  zoomMindmap(delta) {
+    if (!this.renderedMindmap) return;
+    this.mindmapScale = Math.min(2, Math.max(0.25, this.mindmapScale + delta));
+    this.applyMindmapScale();
+  },
+
+  fitMindmap() {
+    if (!this.renderedMindmap) return;
+    const availableWidth = Math.max(240, this.mindmapCanvas.clientWidth - 32);
+    const availableHeight = Math.max(220, this.mindmapCanvas.clientHeight - 32);
+    this.mindmapScale = Math.min(
+      1.2,
+      availableWidth / this.renderedMindmap.width,
+      availableHeight / this.renderedMindmap.height
+    );
+    this.mindmapScale = Math.max(0.25, this.mindmapScale);
+    this.applyMindmapScale();
+    this.mindmapCanvas.scrollLeft = Math.max(0,
+      (this.mindmapCanvas.scrollWidth - this.mindmapCanvas.clientWidth) / 2);
+    this.mindmapCanvas.scrollTop = Math.max(0,
+      (this.mindmapCanvas.scrollHeight - this.mindmapCanvas.clientHeight) / 2);
+  },
+
+  applyMindmapScale() {
+    const svg = this.mindmapSvg.querySelector('svg');
+    if (!svg || !this.renderedMindmap) return;
+    svg.setAttribute('width', String(Math.round(this.renderedMindmap.width * this.mindmapScale)));
+    svg.setAttribute('height', String(Math.round(this.renderedMindmap.height * this.mindmapScale)));
+    this.mindmapZoomLabel.textContent = `${Math.round(this.mindmapScale * 100)}%`;
+  },
+
+  startMindmapDrag(event) {
+    if (event.button !== 0 || !this.renderedMindmap) return;
+    this.mindmapDrag = {
+      x: event.clientX,
+      y: event.clientY,
+      left: this.mindmapCanvas.scrollLeft,
+      top: this.mindmapCanvas.scrollTop
+    };
+    this.mindmapCanvas.setPointerCapture?.(event.pointerId);
+    this.mindmapCanvas.classList.add('dragging');
+  },
+
+  moveMindmapDrag(event) {
+    if (!this.mindmapDrag) return;
+    this.mindmapCanvas.scrollLeft = this.mindmapDrag.left - (event.clientX - this.mindmapDrag.x);
+    this.mindmapCanvas.scrollTop = this.mindmapDrag.top - (event.clientY - this.mindmapDrag.y);
+  },
+
+  stopMindmapDrag() {
+    this.mindmapDrag = null;
+    this.mindmapCanvas.classList.remove('dragging');
+  },
+
+  async importXmind() {
+    if (this.busy) return;
+    this.setBusy(true, '请选择要导入的 XMind 文件…');
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(this.mindmap.source);
-      } else {
-        this.mindmapSource.focus();
-        this.mindmapSource.select();
-        document.execCommand('copy');
+      const imported = await this.controller.importXmind();
+      if (!imported) {
+        this.actionMessage.textContent = '已取消导入。';
+        this.actionMessage.className = 'action-message neutral';
+        return;
       }
-      this.actionMessage.textContent = 'Mermaid 源码已复制。';
+      await this.setMindmap(imported, 0);
+      if (this.flowStage !== 'result') {
+        this.resultTitle.textContent = 'XMind 导入完成';
+        this.adjustFocusButton.hidden = true;
+        this.noteTab.disabled = true;
+        this.editorTab.disabled = true;
+        this.focusResultSummary.textContent = '已跳过 AI 生成，仅在当前窗口预览导入内容。';
+        this.validationSummary.textContent = 'XMind 已独立导入；不会覆盖 Markdown、Zotero 笔记或原文件。';
+        this.validationSummary.className = 'validation success';
+        this.switchStage('result');
+      }
+      this.showPreview('mindmap');
+      this.actionMessage.textContent = `XMind 已导入：${imported.path}`;
       this.actionMessage.className = 'action-message success';
+      this.setGlobalStatus('XMind 已导入', 'success');
     } catch (error) {
       this.actionMessage.textContent = this.errorMessage(error);
       this.actionMessage.className = 'action-message error';
+      this.setGlobalStatus('XMind 导入失败', 'error');
+    } finally {
+      this.setBusy(false);
+      this.updateActions();
     }
   },
 
@@ -564,12 +704,16 @@ var ZoteroAINotes_Preview = {
   },
 
   async exportMindmap() {
-    if (!this.valid || this.dirty || this.busy || !this.mindmap) return;
-    this.setBusy(true, '请选择 Mermaid 思维导图保存位置…');
+    const imported = this.mindmap?.document?.source === 'xmind';
+    if (this.busy || !this.mindmap || (!imported && (!this.valid || this.dirty))) return;
+    this.setBusy(true, '请选择 OPML 思维导图保存位置…');
     try {
-      const result = await this.controller.exportMindmap(this.editor.value);
+      const result = await this.controller.exportMindmap(
+        this.mindmap.document,
+        this.activeMindmapSheet
+      );
       this.actionMessage.textContent = result.path
-        ? `Mermaid 思维导图已导出：${result.path}`
+        ? `OPML 思维导图已导出：${result.path}`
         : '已取消导出。';
       this.actionMessage.className = `action-message ${result.path ? 'success' : 'neutral'}`;
       this.setGlobalStatus(result.path ? '思维导图已导出' : '已取消导出',
@@ -596,13 +740,19 @@ var ZoteroAINotes_Preview = {
 
   updateActions() {
     const canOutput = this.valid && !this.dirty && !this.busy;
+    const canUseMindmap = Boolean(this.mindmap) && !this.busy
+      && (this.mindmap.document.source === 'xmind' || canOutput);
     const alreadySaved = canOutput && this.savedMarkdown === this.editor.value;
     this.saveButton.textContent = alreadySaved ? '已写回 Zotero' : '写回 Zotero';
     this.saveButton.disabled = !canOutput || alreadySaved;
     this.exportButton.disabled = !canOutput;
-    this.exportMindmapButton.disabled = !canOutput || !this.mindmap;
-    this.mindmapTab.disabled = !canOutput || !this.mindmap;
-    this.copyMindmapButton.disabled = !canOutput || !this.mindmap;
+    this.exportMindmapButton.disabled = !canUseMindmap;
+    this.mindmapTab.disabled = !canUseMindmap;
+    this.importXmindButton.disabled = this.busy || this.flowStage !== 'result';
+    this.importXmindStartButton.disabled = this.busy;
+    this.mindmapZoomOut.disabled = !this.renderedMindmap;
+    this.mindmapZoomIn.disabled = !this.renderedMindmap;
+    this.mindmapFitButton.disabled = !this.renderedMindmap;
     this.validateButton.disabled = this.busy || !this.dirty || !this.editor.value.trim();
     this.adjustFocusButton.disabled = this.busy;
     for (const control of this.focusList.querySelectorAll('input, button')) {
@@ -619,8 +769,9 @@ var ZoteroAINotes_Preview = {
       this.generateButton.disabled = !hasSelectedFocus && !this.extraRequirement.value.trim();
     }
     const showResultActions = this.flowStage === 'result';
-    this.saveButton.hidden = !showResultActions;
-    this.exportButton.hidden = !showResultActions;
+    const hasMarkdown = Boolean(this.editor.value.trim());
+    this.saveButton.hidden = !showResultActions || !hasMarkdown;
+    this.exportButton.hidden = !showResultActions || !hasMarkdown;
     this.exportMindmapButton.hidden = !showResultActions;
   },
 
