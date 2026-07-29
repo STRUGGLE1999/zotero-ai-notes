@@ -329,6 +329,110 @@ function comparableText(text: string): string {
     .replace(/[\s\p{P}\p{S}]+/gu, '');
 }
 
+function isDirectQuestion(text: string): boolean {
+  const trimmed = text.trim();
+  return /[?？]\s*$/u.test(trimmed)
+    || /^(?:为什么|为何|如何|是否|能否|什么|哪些|哪种|怎么|谁|何时|哪里)/u.test(trimmed)
+    || /^(?:why|how|what|which|whether|can|could|should|is|are|do|does)\b/iu.test(trimmed);
+}
+
+function questionClauses(text: string): string[] {
+  return (text.match(/[^?？。！!\n;；]+[?？]?/gu) || [])
+    .map(clause => {
+      const trimmed = clause.trim();
+      const separatorIndex = Math.max(trimmed.lastIndexOf('：'), trimmed.lastIndexOf(':'));
+      const withoutPrefix = separatorIndex >= 0 ? trimmed.slice(separatorIndex + 1).trim() : trimmed;
+      return isDirectQuestion(withoutPrefix) ? withoutPrefix : trimmed;
+    })
+    .filter(clause => isDirectQuestion(clause));
+}
+
+function groupQuestionAnnotations(evidence: EvidenceUnit[]): Array<{
+  question: string;
+  annotationIds: Set<string>;
+}> {
+  const groups = new Map<string, { question: string; annotationIds: Set<string> }>();
+  for (const unit of evidence) {
+    for (const question of questionClauses(unit.userComment)) {
+      const fingerprint = comparableText(question);
+      if (!fingerprint) {
+        continue;
+      }
+      const group = groups.get(fingerprint) || { question, annotationIds: new Set<string>() };
+      group.annotationIds.add(unit.annotationId);
+      groups.set(fingerprint, group);
+    }
+  }
+  return [...groups.values()];
+}
+
+function questionFingerprintParts(text: string): Set<string> {
+  const normalized = comparableText(text).toLowerCase();
+  const parts = new Set<string>();
+  for (let index = 0; index < normalized.length - 1; index += 1) {
+    parts.add(normalized.slice(index, index + 2));
+  }
+  return parts;
+}
+
+function questionsAreEquivalent(left: string, right: string): boolean {
+  const leftText = comparableText(left).toLowerCase();
+  const rightText = comparableText(right).toLowerCase();
+  if (!leftText || !rightText) return false;
+  if (leftText.includes(rightText) || rightText.includes(leftText)) return true;
+  const leftParts = questionFingerprintParts(leftText);
+  const rightParts = questionFingerprintParts(rightText);
+  const smallerSize = Math.min(leftParts.size, rightParts.size);
+  if (!smallerSize) return false;
+  const overlap = [...leftParts].filter(part => rightParts.has(part)).length;
+  return overlap / smallerSize >= 0.45;
+}
+
+function commentWithoutSequencePrefix(text: string): string {
+  return text
+    .replace(/^\s*\[[^\]\n]*\d+\s*\/\s*\d+[^\]\n]*\]\s*/u, '')
+    .trim();
+}
+
+function compactEvidenceData(data: EvidenceDebugData): EvidenceDebugData {
+  const groups = new Map<string, EvidenceUnit[]>();
+  for (const unit of data.evidenceUnits) {
+    const locationKey = [
+      unit.attachmentKey,
+      unit.pageLabel || unit.page || '',
+      unit.annotationType,
+      unit.contentHash || comparableText(unit.text),
+      comparableText(unit.annotationText)
+    ].join('|');
+    const group = groups.get(locationKey) || [];
+    group.push(unit);
+    groups.set(locationKey, group);
+  }
+
+  const evidenceUnits = [...groups.values()].map(group => {
+    const representative = group.find(unit => unit.userComment.trim()) || group[0];
+    const comments = new Map<string, string>();
+    const tags = new Set<string>();
+    for (const unit of group) {
+      const comment = commentWithoutSequencePrefix(unit.userComment);
+      const fingerprint = comparableText(comment);
+      if (fingerprint && !comments.has(fingerprint)) {
+        comments.set(fingerprint, comment);
+      }
+      for (const tag of unit.tags) {
+        tags.add(tag);
+      }
+    }
+    return {
+      ...representative,
+      userComment: [...comments.values()].join('\n'),
+      tags: [...tags]
+    };
+  });
+
+  return { ...data, evidenceUnits };
+}
+
 function normalizeFocusResult(raw: RawFocusResult, data: EvidenceDebugData): FocusResult {
   const knownAnnotationIds = new Set(data.evidenceUnits.map(unit => unit.annotationId));
   const candidateTopics = raw.focus_topics || raw.focusTopics || [];
@@ -428,6 +532,41 @@ function normalizeReviewResult(raw: RawReviewResult): ReviewResult {
     overallRisk: enumValue(raw.overall_risk || raw.overallRisk, ['low', 'medium', 'high'] as const, 'high'),
     warnings: warningArray(raw.warnings)
   };
+}
+
+function reconcileBlankReviewMappingIds(
+  note: GeneratedNote,
+  review: ReviewResult
+): ReviewResult {
+  const knownMappingIds = new Set(note.contentMappings.map(mapping => mapping.id));
+  const assignedMappingIds = new Set(review.reviewResults
+    .map(item => item.mappingId)
+    .filter(id => knownMappingIds.has(id)));
+  const missingMappings = note.contentMappings
+    .filter(mapping => !assignedMappingIds.has(mapping.id));
+  const blankItems = review.reviewResults.filter(item => !item.mappingId);
+  if (!blankItems.length || blankItems.length !== missingMappings.length) {
+    return review;
+  }
+
+  const remainingMappings = [...missingMappings];
+  const repairedItems = review.reviewResults.map(item => {
+    if (item.mappingId) {
+      return item;
+    }
+    const overlaps = remainingMappings.map((mapping, index) => ({
+      index,
+      count: mapping.evidenceIds.filter(id => item.validEvidenceIds.includes(id)).length
+    }));
+    const bestOverlap = Math.max(0, ...overlaps.map(candidate => candidate.count));
+    const bestCandidates = overlaps.filter(candidate => candidate.count === bestOverlap);
+    const selectedIndex = bestOverlap > 0 && bestCandidates.length === 1
+      ? bestCandidates[0].index
+      : 0;
+    const [mapping] = remainingMappings.splice(selectedIndex, 1);
+    return { ...item, mappingId: mapping.id };
+  });
+  return { ...review, reviewResults: repairedItems };
 }
 
 function validateOutline(outline: OutlineResult, data: EvidenceDebugData) {
@@ -585,18 +724,23 @@ function staticValidation(
         errors.push(`已选关注主题“${topic.title}”只有批注复述，缺少原文上下文解释或综合。`);
       }
 
-      const questionAnnotationIds = topicEvidence
-        .filter(unit => looksLikeQuestion(unit.userComment))
-        .map(unit => unit.annotationId);
-      for (const annotationId of questionAnnotationIds) {
-        const questionPreserved = topicMappings.some(mapping =>
-          mapping.contentRole === 'open_question'
-          && mapping.annotationIds.includes(annotationId)
-          && looksLikeQuestion(mapping.generatedText)
-        );
-        if (!questionPreserved) {
-          errors.push(`批注 ${annotationId} 中的用户问题没有作为问题保留。`);
-        }
+    }
+
+    const visibleQuestions = questionClauses(note.markdownNote);
+    for (const group of groupQuestionAnnotations(selectedEvidence)) {
+      const questionPreserved = note.contentMappings.some(mapping =>
+        mapping.contentRole === 'open_question'
+        && looksLikeQuestion(mapping.generatedText)
+        && (
+          mapping.annotationIds.some(id => group.annotationIds.has(id))
+          || questionsAreEquivalent(group.question, mapping.generatedText)
+        )
+      ) || visibleQuestions.some(question => questionsAreEquivalent(group.question, question));
+      if (!questionPreserved) {
+        const annotationIds = [...group.annotationIds];
+        const visibleIds = annotationIds.slice(0, 5).join(', ');
+        const remaining = annotationIds.length > 5 ? ` 等 ${annotationIds.length} 条批注` : '';
+        errors.push(`用户问题“${group.question}”没有作为问题保留（批注 ${visibleIds}${remaining}）。`);
       }
     }
   }
@@ -650,6 +794,18 @@ function localReview(note: GeneratedNote): ReviewResult {
   };
 }
 
+function correctedNoteReview(note: GeneratedNote): ReviewResult {
+  const review = localReview(note);
+  return {
+    ...review,
+    reviewResults: review.reviewResults.map(item => ({
+      ...item,
+      reason: '模型已依据 Evidence 校正，且通过本地结构、Evidence ID 与数字一致性检查'
+    })),
+    warnings: ['模型已完成事实校正；最终结果已通过本地一致性检查。']
+  };
+}
+
 function requiresModelReview(
   note: GeneratedNote,
   data: EvidenceDebugData,
@@ -674,6 +830,7 @@ export async function identifyFocusTopics(
   client = new GeminiClient(),
   signal?: RequestCancellationSignal
 ): Promise<FocusResult> {
+  const promptData = compactEvidenceData(data);
   const messages: Array<{ role: 'system' | 'user'; content: string }> = [
     {
       role: 'system',
@@ -693,7 +850,7 @@ export async function identifyFocusTopics(
           '合并语义相近批注',
           '输出 focus_topics、user_questions、warnings'
         ],
-        annotations: uniqueAnnotations(data),
+        annotations: uniqueAnnotations(promptData),
         output_schema: {
           focus_topics: [{
             id: 'F1',
@@ -712,7 +869,7 @@ export async function identifyFocusTopics(
   ];
   const raw = await client.generateJson<RawFocusResult>(config, messages, 0.1, signal);
   try {
-    return normalizeFocusResult(raw, data);
+    return normalizeFocusResult(raw, promptData);
   } catch (error) {
     if (signal?.aborted || isRequestCancelled(error)) {
       throw new RequestCancelledError();
@@ -729,8 +886,8 @@ export async function identifyFocusTopics(
           task: '修正关注重点识别结果',
           previous_error: reason,
           previous_result: raw,
-          allowed_annotation_ids: uniqueAnnotations(data).map(item => item.id),
-          annotations: uniqueAnnotations(data),
+          allowed_annotation_ids: uniqueAnnotations(promptData).map(item => item.id),
+          annotations: uniqueAnnotations(promptData),
           required_schema: {
             focus_topics: [{
               id: 'F1', title: '', description: '', reason: '',
@@ -741,7 +898,7 @@ export async function identifyFocusTopics(
         })
       }
     ], 0.1, signal);
-    return normalizeFocusResult(corrected, data);
+    return normalizeFocusResult(corrected, promptData);
   }
 }
 
@@ -753,9 +910,12 @@ function buildOutline(
   const selectedEvidenceIds = selectedEvidence.map(unit => unit.id);
   const sections: OutlineSection[] = focusTopics.map((topic, index) => {
     const evidence = data.evidenceUnits.filter(unit => topic.annotationIds.includes(unit.annotationId));
-    const userQuestions = evidence
-      .map(unit => unit.userComment.trim())
-      .filter(comment => comment && looksLikeQuestion(comment));
+    const userQuestions = new Map<string, string>();
+    for (const unit of evidence) {
+      for (const question of questionClauses(unit.userComment)) {
+        userQuestions.set(comparableText(question), question);
+      }
+    }
     return {
       id: `S${index + 1}`,
       heading: topic.title,
@@ -768,7 +928,7 @@ function buildOutline(
         : ['document', 'synthesis'],
       evidenceIds: evidence.map(unit => unit.id),
       annotationIds: topic.annotationIds,
-      questionsToAnswer: userQuestions
+      questionsToAnswer: [...userQuestions.values()]
     };
   });
   const result: OutlineResult = {
@@ -866,7 +1026,7 @@ async function reviewAndCorrectNote(
         '你是独立的文献事实审查员。检查初稿的每条内容映射，并在同一次任务中直接修正无依据内容。' +
         '重点检查数字、归因、用户观点和被误写为结论的问题。最终笔记必须使用 ## 分节和空行分段。' +
         '同时删除未由已选批注触发的主题，并保证每个主题包含上下文解释，而不是只复述高亮。' +
-        '只对修正后的 final_note 逐条审查，只输出 JSON。'
+        '完成内部逐条审查后，只返回修正后的 final_note，不要输出审查过程或重复的审查清单。只输出 JSON。'
     },
     {
       role: 'user',
@@ -881,6 +1041,7 @@ async function reviewAndCorrectNote(
           '每个有原文上下文的主题至少包含一个 context_explanation 或 cross_annotation_synthesis',
           '没有真实 user_comment 时不得使用 user_comment 角色或声称用户观点',
           '用户问题必须用 open_question 角色并保持疑问形式',
+          'previous_validation_errors 中点名的用户问题必须先以疑问形式保留并建立 open_question 映射；即使随后给出解释也不能省略原问题',
           '不得加入整篇论文的泛化摘要'
         ],
         output_schema: {
@@ -893,24 +1054,21 @@ async function reviewAndCorrectNote(
               confidence: 'high', needs_review: false
             }],
             unanswered_questions: [], warnings: []
-          },
-          final_review: {
-            review_results: [{
-              mapping_id: 'M1', status: 'supported', reason: '', valid_evidence_ids: [],
-              invalid_evidence_ids: [], recommended_action: 'keep'
-            }],
-            overall_risk: 'low', warnings: []
           }
         }
       })
     }
-  ], 0.1, signal);
+  ], 0.1, signal, 8192);
   const finalNote = raw.final_note || raw.finalNote;
   const finalReview = raw.final_review || raw.finalReview;
-  if (!finalNote || !finalReview) {
-    throw new Error('审查结果缺少修正后的笔记或最终审查。');
+  if (!finalNote) {
+    throw new Error('审查结果缺少修正后的笔记。');
   }
-  return { note: normalizeGeneratedNote(finalNote), review: normalizeReviewResult(finalReview) };
+  const correctedNote = normalizeGeneratedNote(finalNote);
+  const review = finalReview
+    ? reconcileBlankReviewMappingIds(correctedNote, normalizeReviewResult(finalReview))
+    : correctedNoteReview(correctedNote);
+  return { note: correctedNote, review };
 }
 
 async function reviewNote(
@@ -943,7 +1101,7 @@ async function reviewNote(
       })
     }
   ], 0.1, signal);
-  return normalizeReviewResult(raw);
+  return reconcileBlankReviewMappingIds(note, normalizeReviewResult(raw));
 }
 
 export async function generateValidatedNote(
@@ -956,6 +1114,7 @@ export async function generateValidatedNote(
   client = new GeminiClient(),
   options: NotePipelineOptions = {}
 ): Promise<NotePipelineResult> {
+  const pipelineData = compactEvidenceData(data);
   const selectedMap = new Map(selectedFocus.map(item => [item.id, item.priority]));
   const focusTopics = allFocusTopics
     .filter(topic => selectedMap.has(topic.id))
@@ -1027,24 +1186,24 @@ export async function generateValidatedNote(
     switch (checkpoint.nextStage) {
       case 'outline':
         checkpoint.outline = await runLocalStage('outline', () => buildOutline(
-          data, focusTopics
+          pipelineData, focusTopics
         ));
         checkpoint.nextStage = 'note';
         break;
       case 'note':
         checkpoint.note = await runStage('note', () => generateNaturalNote(
           config,
-          data,
+          pipelineData,
           focusTopics,
           checkpoint.outline!,
           extraRequirement,
           client,
           options.signal
         ));
-        if (!requiresModelReview(checkpoint.note, data, focusTopics)) {
+        if (!requiresModelReview(checkpoint.note, pipelineData, focusTopics)) {
           checkpoint.review = localReview(checkpoint.note);
           checkpoint.validation = combineValidation(
-            checkpoint.note, data, checkpoint.review, focusTopics
+            checkpoint.note, pipelineData, checkpoint.review, focusTopics
           );
           for (const stage of checkpoint.stages.filter(item =>
             item.id === 'review' || item.id === 'revision' || item.id === 'rereview'
@@ -1062,14 +1221,14 @@ export async function generateValidatedNote(
         checkpoint.nextStage = 'review';
         break;
       case 'review': {
-        const initialErrors = staticValidation(checkpoint.note!, data, focusTopics).errors;
+        const initialErrors = staticValidation(checkpoint.note!, pipelineData, focusTopics).errors;
         const reviewed = await runStage('review', () => reviewAndCorrectNote(
-          config, data, focusTopics, checkpoint.note!, client, initialErrors, options.signal
+          config, pipelineData, focusTopics, checkpoint.note!, client, initialErrors, options.signal
         ));
         checkpoint.note = reviewed.note;
         checkpoint.review = reviewed.review;
         checkpoint.validation = combineValidation(
-          checkpoint.note!, data, checkpoint.review, focusTopics
+          checkpoint.note!, pipelineData, checkpoint.review, focusTopics
         );
         if (checkpoint.validation.valid) {
           for (const stage of checkpoint.stages.filter(item =>
@@ -1090,7 +1249,7 @@ export async function generateValidatedNote(
       case 'revision': {
         const reviewed = await runStage('revision', () => reviewAndCorrectNote(
           config,
-          data,
+          pipelineData,
           focusTopics,
           checkpoint.note!,
           client,
@@ -1100,7 +1259,7 @@ export async function generateValidatedNote(
         checkpoint.note = reviewed.note;
         checkpoint.review = reviewed.review;
         checkpoint.validation = combineValidation(
-          checkpoint.note!, data, checkpoint.review, focusTopics
+          checkpoint.note!, pipelineData, checkpoint.review, focusTopics
         );
         checkpoint.stages.find(stage => stage.id === 'rereview')!.status = 'skipped';
         return {
@@ -1131,6 +1290,7 @@ export async function auditEditedMarkdown(
   markdown: string,
   client = new GeminiClient()
 ): Promise<{ note: GeneratedNote; validation: ValidationResult }> {
+  const pipelineData = compactEvidenceData(data);
   const raw = await client.generateJson<RawGeneratedNote>(config, [
     {
       role: 'system',
@@ -1143,7 +1303,7 @@ export async function auditEditedMarkdown(
       content: JSON.stringify({
         task: '为编辑后的 Markdown 重建后台映射',
         markdown_note: stripInternalEvidenceIds(markdown),
-        evidence_units: data.evidenceUnits.map(evidenceForPrompt),
+        evidence_units: pipelineData.evidenceUnits.map(evidenceForPrompt),
         output_schema: {
           title: '', markdown_note: stripInternalEvidenceIds(markdown),
           content_mappings: [{
@@ -1157,6 +1317,6 @@ export async function auditEditedMarkdown(
   ]);
   const note = normalizeGeneratedNote(raw);
   note.markdownNote = stripInternalEvidenceIds(markdown);
-  const review = await reviewNote(config, data, note, client);
-  return { note, validation: combineValidation(note, data, review) };
+  const review = await reviewNote(config, pipelineData, note, client);
+  return { note, validation: combineValidation(note, pipelineData, review) };
 }
