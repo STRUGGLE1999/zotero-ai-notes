@@ -134,6 +134,101 @@ describe('note pipeline', () => {
     expect(result.focusTopics[0].annotationIds).toEqual(['5']);
   });
 
+  it('compacts repeated annotation locations while preserving distinct comments', async () => {
+    const repeatedLocationData: EvidenceDebugData = {
+      ...data,
+      evidenceUnits: [
+        {
+          ...data.evidenceUnits[0],
+          annotationId: 'A1',
+          annotationKey: 'ANN-1',
+          userComment: '[AI压力测试 001/083] 为什么这种方法有效？'
+        },
+        {
+          ...data.evidenceUnits[0],
+          id: 'E-PDF-1-02',
+          annotationId: 'A2',
+          annotationKey: 'ANN-2',
+          userComment: '[AI压力测试 002/083] 是否有独立消融证据？'
+        }
+      ]
+    };
+    const client = {
+      generateJson: vi.fn(async (...args: unknown[]) => {
+        const messages = args[1] as Array<{ role: string; content: string }>;
+        const request = JSON.parse(messages[1].content);
+        expect(request.annotations).toHaveLength(1);
+        expect(request.annotations[0].comment)
+          .toBe('为什么这种方法有效？\n是否有独立消融证据？');
+        return {
+          focus_topics: [{
+            id: 'F1', title: '方法', annotation_ids: ['A1'], confidence: 'high', priority: 1
+          }]
+        };
+      })
+    };
+
+    const result = await identifyFocusTopics(config, repeatedLocationData, client as never);
+
+    expect(result.focusTopics[0].annotationIds).toEqual(['A1']);
+    expect(client.generateJson).toHaveBeenCalledTimes(1);
+  });
+
+  it('compacts a 101-annotation stress case to its 15 distinct source locations', async () => {
+    const evidenceUnits = Array.from({ length: 101 }, (_, index) => {
+      const location = index % 15;
+      return {
+        ...data.evidenceUnits[0],
+        id: `E-PDF-${String(index + 1).padStart(3, '0')}`,
+        annotationId: `A${index + 1}`,
+        annotationKey: `ANN-${index + 1}`,
+        annotationText: `highlight ${location}`,
+        userComment:
+          `[AI压力测试 ${String(index + 1).padStart(3, '0')}/101] `
+          + (index % 2 === 0 ? '为什么这种方法有效？' : '是否有独立消融证据？'),
+        page: Math.floor(location / 5) + 1,
+        pageLabel: String(Math.floor(location / 5) + 1),
+        text: `context for location ${location}`,
+        contentHash: `hash-${location}`
+      };
+    });
+    const stressData: EvidenceDebugData = {
+      ...data,
+      stats: {
+        ...data.stats,
+        annotationCount: 101,
+        evidenceCount: 101,
+        contextualizedCount: 101
+      },
+      evidenceUnits
+    };
+    const client = {
+      generateJson: vi.fn(async (...args: unknown[]) => {
+        const messages = args[1] as Array<{ role: string; content: string }>;
+        const request = JSON.parse(messages[1].content);
+        expect(request.annotations).toHaveLength(15);
+        expect(request.annotations.every((annotation: { comment: string }) =>
+          annotation.comment.includes('为什么这种方法有效？')
+          && annotation.comment.includes('是否有独立消融证据？')
+        )).toBe(true);
+        return {
+          focus_topics: [{
+            id: 'F1',
+            title: '压力测试主题',
+            annotation_ids: request.annotations.map((annotation: { id: string }) => annotation.id),
+            confidence: 'high',
+            priority: 1
+          }]
+        };
+      })
+    };
+
+    const result = await identifyFocusTopics(config, stressData, client as never);
+
+    expect(result.focusTopics[0].annotationIds).toHaveLength(15);
+    expect(client.generateJson).toHaveBeenCalledTimes(1);
+  });
+
   it('automatically asks the model to correct a malformed focus result once', async () => {
     const responses = [
       { focus_topics: [{ id: 'F1', title: '方法', annotation_ids: [] }] },
@@ -247,6 +342,7 @@ describe('note pipeline', () => {
     expect(client.generateJson).toHaveBeenCalledTimes(2);
     const reviewMessages = client.generateJson.mock.calls[1][1] as Array<{ content: string }>;
     expect(reviewMessages[1].content).toContain('只有批注复述');
+    expect(client.generateJson.mock.calls[1][4]).toBe(8192);
   });
 
   it('does not allow invented user opinions when an annotation has no comment', async () => {
@@ -342,6 +438,127 @@ describe('note pipeline', () => {
       .toBe(true);
   });
 
+  it('does not treat an instruction containing an embedded question word as an open question', async () => {
+    const instructionData: EvidenceDebugData = {
+      ...data,
+      evidenceUnits: [{
+        ...data.evidenceUnits[0],
+        userComment: '需要结合上下文解释为什么深度能够改善分类效果，同时区分原文与后续解释。'
+      }]
+    };
+    const client = { generateJson: vi.fn(async () => validNoteResponse) };
+
+    const result = await generateValidatedNote(
+      config,
+      instructionData,
+      [focus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never
+    );
+
+    expect(result.validation.valid).toBe(true);
+    expect(client.generateJson).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts a semantically equivalent visible question when its internal mapping is omitted', async () => {
+    const questionData: EvidenceDebugData = {
+      ...data,
+      evidenceUnits: [{
+        ...data.evidenceUnits[0],
+        userComment: '作者是否有充分消融实验支持各因素的独立贡献？'
+      }]
+    };
+    const paraphrasedQuestionNote = {
+      ...validNoteResponse,
+      markdown_note:
+        '# 笔记\n\n## 方法解释\n\n方法在 2015 年得到改进。\n\n' +
+        '论文是否提供了足够的独立消融实验，分别估计各项因素的贡献？'
+    };
+    const client = { generateJson: vi.fn(async () => paraphrasedQuestionNote) };
+
+    const result = await generateValidatedNote(
+      config,
+      questionData,
+      [focus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never
+    );
+
+    expect(result.validation.valid).toBe(true);
+    expect(client.generateJson).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats repeated copies of the same user question as one question', async () => {
+    const repeatedQuestionData: EvidenceDebugData = {
+      ...data,
+      stats: {
+        ...data.stats,
+        annotationCount: 2,
+        evidenceCount: 2,
+        contextualizedCount: 2
+      },
+      evidenceUnits: [
+        {
+          ...data.evidenceUnits[0],
+          annotationId: 'A1',
+          annotationKey: 'ANN-1',
+          userComment: '[AI压力测试 001/083] 用户问题：为什么这种方法能够降低过拟合？关联高亮：method improved'
+        },
+        {
+          ...data.evidenceUnits[0],
+          id: 'E-PDF-1-02',
+          annotationId: 'A2',
+          annotationKey: 'ANN-2',
+          annotationText: 'another method detail',
+          userComment: '[AI压力测试 002/083] 用户问题：为什么这种方法能够降低过拟合？关联高亮：another detail'
+        }
+      ]
+    };
+    const repeatedQuestionFocus: FocusTopic = {
+      ...focus,
+      annotationIds: ['A1', 'A2']
+    };
+    const noteWithOneQuestion = {
+      ...validNoteResponse,
+      markdown_note: '# 笔记\n\n## 方法解释\n\n原文说明了方法的作用。\n\n仍需追问：为什么这种方法能够降低过拟合？',
+      content_mappings: [
+        validNoteResponse.content_mappings[0],
+        {
+          ...validNoteResponse.content_mappings[0],
+          id: 'M2',
+          generated_text: '仍需追问：为什么这种方法能够降低过拟合？',
+          source_kind: 'user_annotation',
+          content_role: 'open_question'
+        }
+      ]
+    };
+    const client = { generateJson: vi.fn(async (..._args: unknown[]) => noteWithOneQuestion) };
+
+    const result = await generateValidatedNote(
+      config,
+      repeatedQuestionData,
+      [repeatedQuestionFocus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never
+    );
+
+    expect(result.validation.valid).toBe(true);
+    expect(client.generateJson).toHaveBeenCalledTimes(1);
+    const messages = client.generateJson.mock.calls[0][1] as Array<{
+      role: string;
+      content: string;
+    }>;
+    const request = JSON.parse(messages[1].content);
+    expect(request.approved_outline.outline[0].questionsToAnswer)
+      .toEqual(['为什么这种方法能够降低过拟合？']);
+  });
+
   it('reviews and corrects an unsupported number without extra model rounds', async () => {
     const invalidNote = {
       ...validNoteResponse,
@@ -366,6 +583,63 @@ describe('note pipeline', () => {
 
     expect(result.validation.valid).toBe(true);
     expect(result.note.markdownNote).not.toContain('999');
+    expect(client.generateJson).toHaveBeenCalledTimes(2);
+  });
+
+  it('reconciles blank review mapping IDs only when every missing mapping has a review item', async () => {
+    const questionData: EvidenceDebugData = {
+      ...data,
+      evidenceUnits: [{
+        ...data.evidenceUnits[0],
+        userComment: '为什么这种方法能够降低过拟合？'
+      }]
+    };
+    const questionNote = {
+      ...validNoteResponse,
+      markdown_note: '# 笔记\n\n方法在 2015 年得到改进。\n\n为什么这种方法能够降低过拟合？',
+      content_mappings: [
+        validNoteResponse.content_mappings[0],
+        {
+          ...validNoteResponse.content_mappings[0],
+          id: 'M2',
+          generated_text: '为什么这种方法能够降低过拟合？',
+          source_kind: 'user_annotation',
+          content_role: 'open_question'
+        }
+      ]
+    };
+    const responses = [
+      validNoteResponse,
+      {
+        final_note: questionNote,
+        final_review: {
+          review_results: [
+            supportedReview.review_results[0],
+            {
+              ...supportedReview.review_results[0],
+              mapping_id: ''
+            }
+          ],
+          overall_risk: 'low',
+          warnings: []
+        }
+      }
+    ];
+    const client = { generateJson: vi.fn(async () => responses.shift()) };
+
+    const result = await generateValidatedNote(
+      config,
+      questionData,
+      [focus],
+      [{ id: 'F1', priority: 1 }],
+      '',
+      undefined,
+      client as never
+    );
+
+    expect(result.validation.valid).toBe(true);
+    expect(result.validation.review.reviewResults.map(item => item.mappingId))
+      .toEqual(['M1', 'M2']);
     expect(client.generateJson).toHaveBeenCalledTimes(2);
   });
 

@@ -217,14 +217,15 @@ export class GeminiClient {
     config: ProviderConfig,
     messages: ChatMessage[],
     temperature = 0.1,
-    signal?: RequestCancellationSignal
+    signal?: RequestCancellationSignal,
+    maxTokens?: number
   ): Promise<T> {
     const content = await this.requestContent(
       config,
       messages,
       temperature,
       GENERATION_TIMEOUT_MS,
-      undefined,
+      maxTokens,
       signal
     );
     return parseJsonContent<T>(content);
