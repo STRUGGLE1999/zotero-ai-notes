@@ -1,74 +1,76 @@
 # Zotero AI Notes
 
-面向 Zotero 9 的 AI 论文批注整理插件。它会读取用户在 PDF 中留下的高亮、评论、标签和页码，结合批注附近的原文，生成经过后台校验的 Markdown 笔记，并进一步生成可在 Zotero 内查看、可导入 XMind、可导出 OPML 的思维导图。
+**English** | [简体中文](README-zh.md)
 
-> 当前开发测试版与最新公开测试版：`0.4.1`；已实机验证：macOS + Zotero `9.0.6`。
-> Windows / Linux 使用同一套跨平台接口，仍需分别完成一次实机回归。
+An AI-powered Zotero 9 plugin for organizing scholarly annotations. It reads highlights, comments, tags, and page numbers from PDFs, combines them with the surrounding source text, and generates background-validated Markdown notes. It can also create mind maps that are viewable inside Zotero, importable into XMind, and exportable as OPML.
 
-## 已实现功能
+> Current development build and latest public preview: `0.4.1`; verified on macOS with Zotero `9.0.6`.
+> Windows and Linux use the same cross-platform interfaces, but each platform still requires a complete hands-on regression test.
 
-- 安装后在文献右键菜单中提供“AI 整理批注”；
-- 读取当前文献、全部 PDF 附件和 Zotero 原生批注；
-- 获取高亮、评论、标签、颜色、页码及位置信息；
-- 只读取有批注的 PDF 页面，并定位高亮前后原文；
-- 建立内部 Evidence 数据，用于约束生成内容和后台校验；
-- 配置 Gemini、OpenAI 兼容、DeepSeek 或自定义服务的 Base URL、API Key 和模型，并测试连接；
-- 自动识别用户关注重点，允许勾选主题并将最多两个主题设为重点；
-- 笔记主题严格由用户选中的批注触发，模型只结合这些批注附近的原文进行解释、关联和组织，不泛化总结整篇论文；
-- 后台检查每个主题是否覆盖真实批注、是否包含上下文解释，并阻止机械复述、虚构用户观点及把用户问题改写成结论；
-- 采用“确认关注重点 → 生成与审查 → 查看与保存”的分阶段界面；
-- 大纲在本地快速整理，笔记生成后先进行本地风险校验；无明确风险时只调用模型 1 次，有风险时才追加模型审查校正，并显示耗时、调用次数和失败原因；
-- 支持真正取消模型请求，并从失败或取消阶段继续重试，保留已完成结果；
-- 生成、编辑和预览自然 Markdown 笔记；
-- 后台检查 Evidence 引用、缺失内容和潜在幻觉；
-- 将结果写回为 Zotero 子笔记，或导出 UTF-8 Markdown；
-- 从已校验笔记生成本地 SVG 思维导图，支持缩放、拖动和适应窗口；
-- 支持导出 OPML，并导入现代 `.xmind` 文件的普通主题层级和多画布；
-- 用户可见的笔记和思维导图不显示内部 Evidence ID。
+## Features
 
-## 工作流程
+- Adds an **AI 整理批注** (*Organize Annotations with AI*) action to the item context menu after installation;
+- Reads the selected item, all attached PDFs, and native Zotero annotations;
+- Extracts highlights, comments, tags, colors, page numbers, and position data;
+- Reads only PDF pages containing annotations and locates the source text surrounding each highlight;
+- Builds an internal Evidence dataset to constrain generation and support background validation;
+- Supports Gemini, OpenAI-compatible, DeepSeek, and custom services, including Base URL, API Key, model selection, and connection testing;
+- Automatically identifies the user's focus topics, allows topics to be selected, and supports marking up to two topics as priorities;
+- Derives note topics strictly from the annotations selected by the user. The model may explain, connect, and organize only those annotations and their nearby source text instead of broadly summarizing the entire paper;
+- Checks whether each topic is grounded in real annotations and includes contextual explanation, while preventing mechanical repetition, fabricated user opinions, and user questions being rewritten as conclusions;
+- Uses a staged workflow: **Confirm Focus Topics → Generate and Review → View and Save**;
+- Builds the outline locally and performs local risk checks after note generation. It makes one model call when no explicit risk is found, and adds a review-and-correction call only when necessary, while displaying elapsed time, call count, and failure reasons;
+- Supports genuine cancellation of model requests and resuming from a failed or cancelled stage without discarding completed results;
+- Generates, edits, and previews natural Markdown notes;
+- Checks Evidence references, missing content, and potential hallucinations in the background;
+- Writes results back as Zotero child notes or exports UTF-8 Markdown;
+- Generates a local SVG mind map from a validated note, with zoom, pan, and fit-to-window controls;
+- Exports OPML and imports standard topic hierarchies and multiple sheets from modern `.xmind` files;
+- Keeps internal Evidence IDs out of user-facing notes and mind maps.
+
+## Workflow
 
 ```text
-选择 Zotero 文献
-→ 读取 PDF 和批注
-→ 定位批注附近原文
-→ 建立内部 Evidence
-→ 识别用户关注重点
-→ 只保留用户确认主题对应的批注与附近原文
-→ 所选模型围绕批注解释、关联并生成 Markdown
-→ 本地风险校验，仅在检测到偏题、机械复述、用户观点误写、异常 Evidence ID、数字、映射或低置信度时追加模型审查校正
-→ 用户预览与编辑
-→ 写回 Zotero / 导出 Markdown
-→ 生成学术风格思维导图 / 导入 XMind / 导出 OPML
+Select a Zotero item
+→ Read PDFs and annotations
+→ Locate the source text around each annotation
+→ Build internal Evidence
+→ Identify the user's focus topics
+→ Keep only annotations and nearby source text associated with confirmed topics
+→ Use the selected model to explain, connect, and generate Markdown around those annotations
+→ Run local risk checks; add model-based review and correction only for topic drift, mechanical repetition, misrepresented user opinions, abnormal Evidence IDs, numbers, mappings, or low confidence
+→ Preview and edit
+→ Write back to Zotero / export Markdown
+→ Generate an academic-style mind map / import XMind / export OPML
 ```
 
-## macOS 安装与使用教程
+## Installation and Usage on macOS
 
-以下步骤面向当前已经实机验证的环境：macOS + Zotero `9.0.6`。当前 XPI 的兼容范围为 Zotero `9.0` 至 `9.0.*`。
+The following instructions target the currently verified environment: macOS with Zotero `9.0.6`. The current XPI supports Zotero `9.0` through `9.0.*`.
 
-### 1. 安装前准备
+### 1. Prerequisites
 
-请先确认：
+Before you begin, make sure that:
 
-- 已安装并至少启动过一次 Zotero 9；
-- macOS 可以正常访问准备使用的 AI 模型服务；
-- 已准备对应服务的 API Key、Base URL 和模型名称；
-- 如果手头没有现成的 XPI，需要安装 Node.js 18 或更高版本和 npm，从源码构建安装包。
+- Zotero 9 is installed and has been launched at least once;
+- macOS can access the AI model service you intend to use;
+- You have the corresponding API Key, Base URL, and model name;
+- If you do not have a ready-made XPI, Node.js 18 or later and npm are installed so you can build it from source.
 
-Zotero 版本可以从 macOS 顶部菜单“Zotero → 关于 Zotero”查看。
+To check the Zotero version, choose **Zotero → About Zotero** from the macOS menu bar.
 
-### 2. 获取 XPI 安装包
+### 2. Get the XPI Package
 
-#### 方式 A：从 GitHub Releases 下载（推荐）
+#### Option A: Download from GitHub Releases (recommended)
 
-- [下载最新公开测试版 0.4.1](https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.4.1/zotero-ai-notes-0.4.1.xpi)
-- [查看并下载全部历史版本](https://github.com/STRUGGLE1999/zotero-ai-notes/releases)
+- [Download the latest public preview, version 0.4.1](https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.4.1/zotero-ai-notes-0.4.1.xpi)
+- [Browse and download all previous releases](https://github.com/STRUGGLE1999/zotero-ai-notes/releases)
 
-下载后直接进入下一步，不要解压 XPI 文件。如果浏览器尝试打开 `.xpi`，请右键下载链接并选择“链接另存为”。
+After downloading, continue to the next step without extracting the XPI. If your browser tries to open the `.xpi` file, right-click the download link and choose **Save Link As**.
 
-#### 方式 B：在 Mac 上从源码构建
+#### Option B: Build from source on macOS
 
-打开 macOS“终端”，依次执行：
+Open Terminal and run:
 
 ```bash
 git clone https://github.com/STRUGGLE1999/zotero-ai-notes.git
@@ -77,173 +79,173 @@ npm install
 npm run build
 ```
 
-构建成功后，可以在项目根目录看到：
+After a successful build, the following file will appear in the project root:
 
 ```text
 zotero-ai-notes-0.4.1.xpi
 ```
 
-如需在安装前完整检查安装包，可继续执行：
+To fully verify the package before installation, run:
 
 ```bash
 node scripts/verify-xpi.js
 ```
 
-终端最后显示 `XPI verification PASSED`，表示清单、生命周期函数、目录结构和 Zotero 9.0.6 兼容范围检查通过。
+If the final terminal message is `XPI verification PASSED`, the manifest, lifecycle functions, directory structure, and Zotero 9.0.6 compatibility range have passed validation.
 
-### 3. 在 Zotero 中安装插件
+### 3. Install the Plugin in Zotero
 
-1. 打开 Zotero 9；
-2. 点击 macOS 顶部菜单“工具 → 插件”；
-3. 在插件管理器右上角点击齿轮按钮；
-4. 选择“Install Plugin From File…”或“从文件安装插件…”；
-5. 选择从源码构建的 `zotero-ai-notes-0.4.1.xpi`，或从 Releases 下载的公开版本 XPI；
-6. 在确认窗口中允许安装；
-7. 检查插件列表中是否出现对应版本的 `Zotero AI Notes`，并确认状态为启用。
+1. Open Zotero 9;
+2. Choose **Tools → Plugins** from the macOS menu bar;
+3. Click the gear button in the upper-right corner of the plugin manager;
+4. Select **Install Plugin From File…**;
+5. Choose `zotero-ai-notes-0.4.1.xpi`, either built from source or downloaded from Releases;
+6. Approve the installation in the confirmation dialog;
+7. Confirm that the expected version of `Zotero AI Notes` appears in the plugin list and is enabled.
 
-如果安装后右键菜单暂时没有出现，完全退出 Zotero，再重新打开一次。
+If the context-menu action does not appear immediately, quit Zotero completely and reopen it.
 
-### 4. 配置 AI 模型
+### 4. Configure an AI Model
 
-1. 点击 macOS 顶部菜单“Zotero → 设置”；
-2. 打开“Zotero AI Notes”设置页；
-3. 填写以下内容：
+1. Choose **Zotero → Settings** from the macOS menu bar;
+2. Open the **Zotero AI Notes** settings page;
+3. Enter the following information:
 
-   - API 提供商：选择 Gemini、OpenAI 兼容、DeepSeek 或自定义 OpenAI 兼容服务；
-   - Base URL：填写服务商提供的 OpenAI 兼容接口地址；Gemini 官方示例为 `https://generativelanguage.googleapis.com/v1beta/openai/`；
-   - API Key：填写所选服务商提供的 Key；
-   - 模型：填写当前 API Key 实际可用的模型名称。
+   - API provider: Gemini, OpenAI-compatible, DeepSeek, or a custom OpenAI-compatible service;
+   - Base URL: the OpenAI-compatible endpoint supplied by the provider. The official Gemini example is `https://generativelanguage.googleapis.com/v1beta/openai/`;
+   - API Key: the key issued by your selected provider;
+   - Model: a model name that is available to the current API Key.
 
-4. 点击“保存”；
-5. 点击“测试连接”；
-6. 等待界面显示“连接成功，API Key 和模型可用”。
+4. Click **Save**;
+5. Click **Test Connection**;
+6. Wait for the interface to confirm that the connection, API Key, and model are valid.
 
-API Key 只保存在本机 Zotero/Firefox Login Manager 中。设置页不会回显完整 Key，插件也不会把 Key 写入日志、调试文件或导出的笔记。
+The API Key is stored only in the local Zotero/Firefox Login Manager. The settings page never displays the full key, and the plugin does not write it to logs, debug files, or exported notes.
 
-### 5. 导入一篇新的论文 PDF
+### 5. Import a New Paper PDF
 
-1. 将论文 PDF 直接拖入 Zotero 文献列表；
-2. 如果 Zotero 自动识别到论文元数据，确认标题和作者正确；
-3. 如果 PDF 仍是独立附件，可以右键 PDF，选择“从 PDF 获取元数据”或为它创建父条目；
-4. 双击 PDF，在 Zotero 内置阅读器中打开论文。
+1. Drag the paper PDF into the Zotero item list;
+2. If Zotero retrieves the paper metadata automatically, verify the title and authors;
+3. If the PDF remains a standalone attachment, right-click it and choose **Retrieve Metadata for PDF**, or create a parent item;
+4. Double-click the PDF to open it in Zotero's built-in reader.
 
-插件既支持选中文献父条目，也支持直接选中 PDF 附件。为了让生成笔记和写回结果的归属更清晰，推荐先创建父条目。
+The plugin supports both parent bibliographic items and PDF attachments. Creating a parent item first is recommended so generated notes and write-back results have a clear location.
 
-### 6. 为论文添加测试批注
+### 6. Add Test Annotations
 
-在 Zotero PDF 阅读器中使用高亮或下划线工具。建议第一次完整测试准备：
+Use the highlight or underline tool in Zotero's PDF reader. For a first end-to-end test, prepare:
 
-- 至少 5 条高亮或下划线；
-- 至少 1～2 条带有个人想法的评论；
-- 批注尽量分布在不同页面；
-- 可以为部分批注添加标签；
-- 优先标记研究问题、方法、关键结论、局限性或你真正关心的内容。
+- At least five highlights or underlines;
+- At least one or two comments containing your own thoughts;
+- Annotations distributed across several pages where possible;
+- Tags on some annotations if useful;
+- Annotations covering research questions, methods, key findings, limitations, or anything you genuinely care about.
 
-批注会由 Zotero 自动保存。完成后返回文献列表。
+Zotero saves annotations automatically. Return to the item list when finished.
 
-### 7. 生成 AI 笔记
+### 7. Generate AI Notes
 
-1. 在 Zotero 文献列表中选中论文父条目，或选中对应 PDF；
-2. 右键点击“AI 整理批注”；
-3. 等待插件读取 PDF、批注和批注所在页面的附近原文；
-4. 在“关注重点”区域检查插件识别出的主题；
-5. 取消不需要的主题，或将最多两个主题设为重点；
-6. 如有额外要求，可以在输入框中填写，例如“重点解释研究方法，不要扩展批注之外的内容”；
-7. 点击“生成笔记”；
-8. 等待本地大纲整理、笔记生成和风险校验；只有检测到明确风险时才会追加模型审查校正。
+1. Select the paper's parent item or its PDF in the Zotero item list;
+2. Right-click and choose **AI 整理批注** (*Organize Annotations with AI*);
+3. Wait while the plugin reads the PDFs, annotations, and nearby source text from annotated pages;
+4. Review the topics identified in the **关注重点** (*Focus Topics*) section;
+5. Deselect unwanted topics or mark up to two topics as priorities;
+6. Optionally provide an additional instruction, such as: “Focus on explaining the research method and do not expand beyond the annotations”;
+7. Click **生成笔记** (*Generate Notes*);
+8. Wait for local outline construction, note generation, and risk validation. A model-based review and correction pass is added only when an explicit risk is detected.
 
-生成完成后默认显示渲染后的笔记预览；如需修改，可切换到“Markdown 编辑”。正式内容不会显示插件内部使用的 Evidence ID。
+When generation finishes, the rendered note preview is shown by default. Switch to **Markdown 编辑** (*Markdown Editor*) if changes are needed. The final content does not display internal Evidence IDs.
 
-### 8. 检查、写回和导出
+### 8. Review, Write Back, and Export
 
-生成完成后可以执行：
+After generation, you can:
 
-- **编辑 Markdown**：切换到“Markdown 编辑”后修改内容；
-- **校验当前内容**：修改后重新执行后台校验；
-- **写回 Zotero**：在当前论文下创建新的子笔记，不覆盖已有笔记；
-- **导出 Markdown**：通过 macOS 保存窗口选择文件名和保存位置；
-- **查看思维导图**：切换到“思维导图”标签查看本地 SVG 导图；
-- **浏览导图**：使用缩放、拖动和“适应窗口”浏览大图；
-- **导入 XMind**：第一步即可直接导入，不依赖 AI 生成；支持现代 `.xmind` 的普通主题层级，多画布文件可切换画布；
-- **导出 OPML**：将生成或导入的当前画布保存为 UTF-8 OPML 文件。
+- **Edit Markdown**: switch to **Markdown 编辑** (*Markdown Editor*) and modify the content;
+- **Validate current content**: click **校验当前内容** (*Validate Current Content*) after editing;
+- **Write back to Zotero**: click **写回 Zotero** (*Write Back to Zotero*) to create a new child note under the current paper without overwriting existing notes;
+- **Export Markdown**: click **导出 Markdown** (*Export Markdown*) and choose a file name and location in the macOS save dialog;
+- **View the mind map**: open the **思维导图** (*Mind Map*) tab to view the local SVG map;
+- **Navigate the map**: zoom, pan, or use **适应窗口** (*Fit to Window*) for a large map;
+- **Import XMind**: click **导入 XMind** (*Import XMind*) to import directly without AI generation. Standard topic hierarchies in modern `.xmind` files are supported, and sheets can be switched in multi-sheet files;
+- **Export OPML**: click **导出 OPML** (*Export OPML*) to save the current generated or imported sheet as a UTF-8 OPML file.
 
-### 9. 完整流程测试清单
+### 9. End-to-End Test Checklist
 
-使用新论文测试时，可以按下面的清单逐项确认：
+When testing with a new paper, verify each item below:
 
-- [ ] Zotero 插件列表显示对应版本的 `Zotero AI Notes` 且已启用；
-- [ ] 文献右键菜单只出现一个“AI 整理批注”；
-- [ ] 插件显示的论文标题正确；
-- [ ] PDF 数量和批注数量正确；
-- [ ] 大部分批注能够定位到附近原文；
-- [ ] 关注重点与自己的批注意图一致；
-- [ ] 可以勾选主题、设置最多两个重点主题，且不再出现数字优先级下拉框；
-- [ ] 所选模型成功返回 Markdown，阶段耗时和调用次数正常更新；
-- [ ] “取消生成”能中止当前请求，失败后能从当前阶段重试；
-- [ ] 后台校验通过，或明确显示需要补充的内容；
-- [ ] 正式笔记中没有类似 `E-XXXX-1-01` 的内部 Evidence ID；
-- [ ] “写回 Zotero”创建了新笔记，没有覆盖旧笔记，顶部状态会结束并显示“已写回 Zotero”；
-- [ ] Markdown 文件能够正常保存和打开；
-- [ ] 思维导图能显示节点，页面不出现源码区域，缩放和适应窗口可用；
-- [ ] OPML 文件能够正常保存并由 XMind 导入；
-- [ ] 现代 `.xmind` 文件无需先生成笔记即可导入，且不会覆盖 Markdown 或 Zotero 笔记。
+- [ ] The expected version of `Zotero AI Notes` appears in the Zotero plugin list and is enabled;
+- [ ] Exactly one **AI 整理批注** (*Organize Annotations with AI*) action appears in the item context menu;
+- [ ] The plugin displays the correct paper title;
+- [ ] PDF and annotation counts are correct;
+- [ ] Nearby source text is found for most annotations;
+- [ ] Identified focus topics match your annotation intent;
+- [ ] Topics can be selected and up to two can be prioritized, with no numeric priority dropdown;
+- [ ] The selected model returns Markdown successfully, and stage timing and call counts update correctly;
+- [ ] **取消生成** (*Cancel Generation*) stops the current request, and a failed stage can be resumed;
+- [ ] Background validation passes or clearly identifies content that must be added;
+- [ ] The final note contains no internal Evidence IDs such as `E-XXXX-1-01`;
+- [ ] **写回 Zotero** (*Write Back to Zotero*) creates a new note without overwriting old notes, and the top status ends with **已写回 Zotero** (*Written Back to Zotero*);
+- [ ] The Markdown file saves and opens correctly;
+- [ ] The mind map displays nodes without a source-code panel, and zoom and fit-to-window controls work;
+- [ ] The OPML file saves correctly and can be imported into XMind;
+- [ ] A modern `.xmind` file can be imported without generating a note first and does not overwrite Markdown or Zotero notes.
 
-### 10. macOS 常见问题
+### 10. Troubleshooting on macOS
 
-#### 安装时显示“无法安装插件”
+#### “The add-on could not be installed”
 
-- 确认 Zotero 是 9.0.x；
-- 确认选择的是 `.xpi` 文件，而不是解压后的目录；
-- 重新执行 `npm run build` 和 `node scripts/verify-xpi.js`；
-- 打开“工具 → 开发者 → Error Console”，重新安装并查看最新红色错误。
+- Confirm that Zotero is version 9.0.x;
+- Confirm that you selected the `.xpi` file rather than an extracted directory;
+- Run `npm run build` and `node scripts/verify-xpi.js` again;
+- Open **Tools → Developer → Error Console**, retry the installation, and inspect the latest red error message.
 
-#### 没有“AI 整理批注”右键菜单
+#### The context-menu action is missing
 
-- 确认插件处于启用状态；
-- 选中文献条目或 PDF 附件后再右键；
-- 完全退出并重新启动 Zotero；
-- 检查是否同时安装了多个旧版本。
+- Confirm that the plugin is enabled;
+- Select a bibliographic item or PDF attachment before right-clicking;
+- Quit and restart Zotero completely;
+- Check whether multiple older plugin versions are installed.
 
-#### 提示没有批注
+#### The plugin reports no annotations
 
-- 确认批注是在 Zotero PDF 阅读器中创建的原生批注；
-- 返回文献列表后重新运行插件；
-- 确认当前选中的是包含该 PDF 的父条目或 PDF 本身。
+- Confirm that the annotations were created natively in Zotero's PDF reader;
+- Return to the item list and run the plugin again;
+- Confirm that the selected item is either the relevant parent item or the PDF itself.
 
-#### 模型连接失败
+#### The model connection fails
 
-- 检查 API Key 是否保存成功；
-- 检查 Base URL 是否与服务商提供的 OpenAI 兼容地址一致，并以 `/` 结尾；
-- 检查填写的模型是否对当前 API Key 可用；
-- 确认当前网络环境可以访问所选模型服务的 API。
+- Check that the API Key was saved successfully;
+- Confirm that the Base URL matches the provider's OpenAI-compatible endpoint and ends with `/`;
+- Confirm that the selected model is available to the current API Key;
+- Confirm that your network can reach the selected model service API.
 
-#### 插件窗口没有出现在最前面
+#### The plugin window is not in front
 
-从 macOS 顶部菜单选择“窗口 → Zotero AI Notes”，即可切换到已经打开的预览窗口。
+Choose **Window → Zotero AI Notes** from the macOS menu bar to bring the existing preview window forward.
 
-#### 部分批注没有找到附近原文
+#### Nearby source text is missing for some annotations
 
-扫描件、图片型 PDF、复杂双栏排版、公式或非常短的单字符批注可能无法稳定定位。插件会保留原始批注并显示警告，不会因此丢弃批注。
+Scanned or image-based PDFs, complex two-column layouts, formulas, and very short single-character annotations may not be located reliably. The plugin keeps the original annotation and displays a warning instead of discarding it.
 
-#### 思维导图没有显示 SVG
+#### The mind map does not display as SVG
 
-插件会自动显示树状结构回退视图。请记录错误提示并反馈到项目 Issues；导入文件和原始 Markdown 不会被修改。
+The plugin automatically falls back to a tree view. Record the error message and report it in the project Issues. Imported files and original Markdown remain unchanged.
 
-## 数据与隐私
+## Data and Privacy
 
-- 插件不会把整篇 PDF 上传给模型；
-- 只发送用户确认主题所需的文献标题、批注、用户评论、标签、页码和附近原文；
-- API Key 不会进入请求日志；
-- 写回 Zotero 时创建新的子笔记，不覆盖已有笔记；
-- 调试 JSON 和阶段性 Markdown 使用系统临时目录或用户选择的保存位置。
+- The plugin never uploads the entire PDF to the model;
+- It sends only the document title, annotations, user comments, tags, page numbers, and nearby source text required by the topics the user has confirmed;
+- API Keys are excluded from request logs;
+- Writing back to Zotero creates a new child note and never overwrites an existing note;
+- Debug JSON and intermediate Markdown files use either the system temporary directory or a save location selected by the user.
 
-## 本地开发
+## Local Development
 
-环境要求：
+Requirements:
 
-- Node.js 18 或更高版本；
-- npm；
-- Zotero 9。
+- Node.js 18 or later;
+- npm;
+- Zotero 9.
 
 ```bash
 npm install
@@ -253,79 +255,79 @@ npm test
 npm run build
 ```
 
-构建完成后，项目根目录会生成：
+After building, the following file is generated in the project root:
 
 ```text
 zotero-ai-notes-0.4.1.xpi
 ```
 
-当前自动验证结果：
+Current automated validation results:
 
-- TypeScript 类型检查通过；
-- ESLint 0 个错误；
-- 14 个测试文件、73 个测试全部通过；
-- XPI 结构与压缩包完整性检查通过。
+- TypeScript type checking passes;
+- ESLint reports zero errors;
+- All 73 tests across 14 test files pass;
+- XPI structure and archive integrity checks pass.
 
-## 项目结构
+## Project Structure
 
 ```text
-addon/                  Zotero 清单、设置页、预览窗口和本地化资源
-src/config/             配置与凭据存储
-src/zotero/             文献、附件、批注和右键菜单
-src/evidence/           PDF 上下文定位与 Evidence 构建
-src/llm/                Gemini 请求、生成和后台校验
-src/output/             Markdown、Zotero 写回、导图树、OPML 与 XMind 适配
-src/ui/                 预览窗口控制器
-tests/                  自动测试
-docs/                   PRD、架构、技术、Prompt 和阶段验收文档
-scripts/                构建及 XPI 验证脚本
+addon/                  Zotero manifest, settings page, preview window, and localization resources
+src/config/             Configuration and credential storage
+src/zotero/             Items, attachments, annotations, and context-menu integration
+src/evidence/           PDF context location and Evidence construction
+src/llm/                Gemini requests, generation, and background validation
+src/output/             Markdown, Zotero write-back, map tree, OPML, and XMind adapters
+src/ui/                 Preview-window controller
+tests/                  Automated tests
+docs/                   PRD, architecture, technical, prompt, and acceptance documentation
+scripts/                Build and XPI verification scripts
 ```
 
-## 文档
+## Documentation
 
-- [文档导航](docs/README.md)
-- [产品需求文档](docs/requirements/01_Zotero_AI批注整理插件_PRD_Zotero9版.md)
-- [产品架构设计](docs/architecture/02_Zotero_AI插件_产品架构设计_Zotero9版.md)
-- [技术设计文档](docs/technical/03_Zotero_AI插件_技术设计文档_Zotero9版.md)
-- [Prompt 设计文档](docs/prompts/04_Zotero_AI插件_Prompt设计文档_Zotero9版.md)
-- [2026-07-14 完整开发复盘](docs/progress/2026-07-14-development-retrospective.md)
+- [Documentation index (Chinese)](docs/README.md)
+- [Product requirements document (Chinese)](docs/requirements/01_Zotero_AI批注整理插件_PRD_Zotero9版.md)
+- [Product architecture design (Chinese)](docs/architecture/02_Zotero_AI插件_产品架构设计_Zotero9版.md)
+- [Technical design document (Chinese)](docs/technical/03_Zotero_AI插件_技术设计文档_Zotero9版.md)
+- [Prompt design document (Chinese)](docs/prompts/04_Zotero_AI插件_Prompt设计文档_Zotero9版.md)
+- [Full development retrospective: July 14, 2026 (Chinese)](docs/progress/2026-07-14-development-retrospective.md)
 
-## 版本历程
+## Version History
 
-| 版本 | 主要内容 |
+| Version | Highlights |
 |---|---|
-| `0.1.0` | Zotero 9 插件空壳、安装、生命周期、右键菜单和测试提示 |
-| `0.1.1` | 文献、PDF 附件和批注结构化读取 |
-| `0.1.2` | PDF 上下文、Evidence、Gemini 配置和 Markdown 返回 |
-| `0.2.0` | 关注重点、生成、校验、预览、写回和导出闭环 |
-| `0.2.1`–`0.2.3` | Evidence ID 展示、窗口交互和 Gemini 数字批注 ID 等问题修复 |
-| `0.3.0` | Mermaid 思维导图、SVG 预览、源码复制和导出 |
-| `0.3.1` | 小窗口与 Windows 布局修复、多模型提供商、Markdown 预览和识别失败重试 |
-| `0.3.2`–`0.3.5` | 延长生成超时、细化进度、兼容 Chat Completions 与 Responses API 返回格式并自动回退 |
-| `0.3.6` | 生成阶段、耗时、调用次数、真正取消和从当前阶段重试 |
-| `0.3.7` | 修复 Zotero 沙箱取消机制导致的识别失败，并完善中英文数字单位校验 |
-| `0.3.8` | 分阶段生成界面、重点主题交互、本地大纲与按风险追加模型审查、精确到秒的笔记标题、写回保护及 XHTML 分段预览修复 |
-| `0.4.0` | 批注驱动的解释型笔记、本地学术风格 SVG 导图、无源码界面、缩放拖动、OPML 导出和现代 XMind 导入 |
-| `0.4.1` | 长批注 Evidence 压缩、用户问题去重与语义等价校验、审查输出限流和 101 条批注稳定性修复 |
+| `0.1.0` | Zotero 9 plugin shell, installation, lifecycle, context menu, and test prompt |
+| `0.1.1` | Structured reading of bibliographic items, PDF attachments, and annotations |
+| `0.1.2` | PDF context, Evidence, Gemini configuration, and Markdown output |
+| `0.2.0` | Complete focus-topic, generation, validation, preview, write-back, and export workflow |
+| `0.2.1`–`0.2.3` | Fixes for exposed Evidence IDs, window behavior, and Gemini numeric annotation IDs |
+| `0.3.0` | Mermaid mind maps, SVG preview, source copying, and export |
+| `0.3.1` | Small-window and Windows layout fixes, multiple model providers, Markdown preview, and recognition retry |
+| `0.3.2`–`0.3.5` | Longer generation timeout, detailed progress, compatibility with Chat Completions and Responses API formats, and automatic fallback |
+| `0.3.6` | Generation stages, elapsed time, call counts, genuine cancellation, and retry from the current stage |
+| `0.3.7` | Fix for recognition failures caused by Zotero sandbox cancellation, plus improved Chinese and English numeric-unit validation |
+| `0.3.8` | Staged generation UI, priority-topic interaction, local outlining, risk-based model review, second-level note timestamps, write-back protection, and XHTML paragraph preview fixes |
+| `0.4.0` | Annotation-driven explanatory notes, local academic-style SVG maps, source-free interface, zoom and pan, OPML export, and modern XMind import |
+| `0.4.1` | Long-annotation Evidence compression, user-question deduplication and semantic-equivalence validation, review-output limiting, and stability fixes for 101 annotations |
 
-详细变更见 [CHANGELOG.md](CHANGELOG.md)。
+See [CHANGELOG.md](CHANGELOG.md) for complete release details.
 
-## 版本与发布策略
+## Versioning and Release Policy
 
-项目采用语义化版本。补丁版本用于缺陷和兼容性修复，次版本用于一组完整的新能力，`1.0.0` 留给完成跨平台回归、兼容策略和稳定性验收后的首个稳定版。版本号不是小数，例如 `0.10.0` 晚于 `0.9.0`。
+The project follows Semantic Versioning. Patch versions are used for bug and compatibility fixes, minor versions for complete new capabilities, and `1.0.0` is reserved for the first stable release after cross-platform regression testing, compatibility planning, and stability acceptance. Version numbers are not decimals: for example, `0.10.0` is later than `0.9.0`.
 
-GitHub Releases 只发布值得用户集中下载的版本：新的次版本或主版本、重要功能里程碑、修复无法安装/启动/生成/数据安全问题的关键补丁，以及明确面向用户的公开测试版。内部测试版和普通小修复可以只保留在代码与 CHANGELOG 中，不必逐个创建 Release。跨平台稳定版门槛达成前，`0.x` Release 默认标记为 Pre-release。
+GitHub Releases are reserved for builds worth distributing to users: new minor or major versions, significant feature milestones, critical patches for installation, startup, generation, or data-safety problems, and public previews intended for broader testing. Internal builds and routine fixes may remain in the codebase and CHANGELOG without receiving individual Releases. Before the cross-platform stable-release criteria are met, `0.x` Releases are marked as pre-releases by default.
 
-`0.4.0` 增加 OPML/XMind 导入导出和本地学术风格导图，并将笔记生成调整为由用户选中批注决定主题、附近原文提供解释边界，因此作为功能里程碑 Pre-release 发布。更完整的规则见 [AGENTS.md](AGENTS.md)。
+Version `0.4.0` introduced OPML/XMind import and export and local academic-style mind maps. It also changed note generation so topics are determined by user-selected annotations and nearby source text defines the explanatory boundary. It was therefore published as a feature-milestone pre-release. See [AGENTS.md](AGENTS.md) for the complete policy.
 
-## 后续计划
+## Roadmap
 
-- 在 Windows Zotero 9 和 Linux Zotero 9 上完成实机回归；
-- 优化无文本 PDF、扫描件和复杂排版的上下文定位；
-- 增加可配置的笔记模板；
-- 增加旧版 `content.xml` XMind 文件兼容，并评估关系线、概要和附件的有限导入；
-- 继续验证 GitHub Releases 自动更新在 Windows 和 Linux 上的兼容性。
+- Complete hands-on regression testing with Zotero 9 on Windows and Linux;
+- Improve context location for text-free PDFs, scans, and complex layouts;
+- Add configurable note templates;
+- Add compatibility with legacy XMind `content.xml` files and evaluate limited support for relationships, summaries, and attachments;
+- Continue validating GitHub Releases auto-update compatibility on Windows and Linux.
 
-## 许可证
+## License
 
 [MIT License](LICENSE)
