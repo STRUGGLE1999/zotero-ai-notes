@@ -56,6 +56,13 @@ export interface RequestCancellationSignal {
   subscribe(listener: () => void): () => void;
 }
 
+interface SendOptions {
+  timeout?: number;
+  signal?: RequestCancellationSignal;
+  responseType?: 'json' | 'text';
+  accept?: string;
+}
+
 class RequestCancellationSignalImpl implements RequestCancellationSignal {
   aborted = false;
   private listeners = new Set<() => void>();
@@ -192,6 +199,57 @@ function safeErrorMessage(error: unknown, apiKey: string): string {
   return sanitized.length > 300 ? `${sanitized.slice(0, 300)}…` : sanitized;
 }
 
+function isCodexResponsesEndpoint(baseURL: string): boolean {
+  return /\/backend-api\/codex(?:\/|$)/.test(new URL(baseURL).pathname);
+}
+
+function parseCodexResponsesStream(text: string): string {
+  const deltaParts: string[] = [];
+  let completedContent = '';
+
+  let lineStart = 0;
+  while (lineStart <= text.length) {
+    let lineEnd = text.indexOf('\n', lineStart);
+    if (lineEnd === -1) lineEnd = text.length;
+    let line = text.slice(lineStart, lineEnd);
+    if (line.endsWith('\r')) line = line.slice(0, -1);
+    lineStart = lineEnd + 1;
+
+    if (!line.startsWith('data:')) continue;
+    const data = line.slice(5).trim();
+    if (!data || data === '[DONE]') continue;
+
+    const event = JSON.parse(data) as {
+      type?: string;
+      delta?: unknown;
+      text?: unknown;
+      error?: { message?: unknown };
+      response?: ChatCompletionResponse;
+      item?: unknown;
+    };
+    if (event.type === 'response.failed' || event.error) {
+      const message = event.error?.message;
+      throw new Error(typeof message === 'string' ? message : 'Responses API 返回失败事件。');
+    }
+    if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') {
+      if (!deltaParts.length) completedContent = '';
+      deltaParts.push(event.delta);
+    }
+    if (!deltaParts.length &&
+        event.type === 'response.output_text.done' && typeof event.text === 'string') {
+      completedContent = event.text;
+    }
+    if (!deltaParts.length && event.type === 'response.output_item.done' && event.item) {
+      completedContent ||= textFromParts(event.item);
+    }
+    if (!deltaParts.length && event.type === 'response.completed' && event.response) {
+      completedContent ||= responseContent(event.response);
+    }
+  }
+
+  return (deltaParts.length ? deltaParts.join('') : completedContent).trim();
+}
+
 export class GeminiClient {
   constructor(private request: HttpRequest = Zotero.HTTP.request.bind(Zotero.HTTP)) {}
 
@@ -239,12 +297,16 @@ export class GeminiClient {
     maxTokens?: number,
     signal?: RequestCancellationSignal
   ): Promise<string> {
+    if (isCodexResponsesEndpoint(config.baseURL)) {
+      return this.requestCodexResponses(config, messages, timeout, signal);
+    }
+
     const chatXhr = await this.send('POST', `${config.baseURL}chat/completions`, config, {
       model: config.model,
       messages,
       temperature,
       ...(maxTokens ? { max_tokens: maxTokens } : {})
-    }, timeout, signal);
+    }, { timeout, signal });
     const chatResponse = parseResponse(chatXhr) as ChatCompletionResponse;
     const chatContent = responseContent(chatResponse);
     if (chatContent) return chatContent;
@@ -255,7 +317,7 @@ export class GeminiClient {
         model: config.model,
         input: messages,
         ...(maxTokens ? { max_output_tokens: maxTokens } : {})
-      }, timeout, signal);
+      }, { timeout, signal });
       const responsesResponse = parseResponse(responsesXhr) as ChatCompletionResponse;
       const responsesContent = responseContent(responsesResponse);
       if (responsesContent) return responsesContent;
@@ -268,14 +330,54 @@ export class GeminiClient {
     }
   }
 
+  private async requestCodexResponses(
+    config: ProviderConfig,
+    messages: ChatMessage[],
+    timeout: number,
+    signal?: RequestCancellationSignal
+  ): Promise<string> {
+    const instructions = messages
+      .filter(message => message.role === 'system')
+      .map(message => message.content)
+      .join('\n\n');
+    const input = messages
+      .filter(message => message.role === 'user')
+      .map(message => ({
+        role: 'user',
+        content: [{ type: 'input_text', text: message.content }]
+      }));
+    const xhr = await this.send('POST', `${config.baseURL}responses`, config, {
+      model: config.model,
+      ...(instructions ? { instructions } : {}),
+      input,
+      stream: true,
+      store: false
+    }, {
+      timeout,
+      signal,
+      responseType: 'text',
+      accept: 'text/event-stream'
+    });
+    const content = parseCodexResponsesStream(xhr.responseText || String(xhr.response || ''));
+    if (!content) {
+      throw new Error('Responses API 没有返回正文。');
+    }
+    return content;
+  }
+
   private async send(
     method: string,
     url: string,
     config: ProviderConfig,
     body?: unknown,
-    timeout = GENERATION_TIMEOUT_MS,
-    signal?: RequestCancellationSignal
+    options: SendOptions = {}
   ): Promise<XMLHttpRequest> {
+    const {
+      timeout = GENERATION_TIMEOUT_MS,
+      signal,
+      responseType = 'json',
+      accept
+    } = options;
     if (signal?.aborted) {
       throw new RequestCancelledError();
     }
@@ -286,10 +388,11 @@ export class GeminiClient {
       return await this.request(method, url, {
         headers: {
           Authorization: `Bearer ${config.apiKey}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(accept ? { Accept: accept } : {})
         },
         body: body ? JSON.stringify(body) : undefined,
-        responseType: 'json',
+        responseType,
         timeout,
         cancellerReceiver: (canceller: () => void) => {
           cancelRequest = canceller;

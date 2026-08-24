@@ -10,6 +10,14 @@ const config: ProviderConfig = {
   apiKey: 'test-secret-key'
 };
 
+const codexResponsesConfig: ProviderConfig = {
+  provider: 'custom',
+  providerLabel: '自定义 OpenAI 兼容服务',
+  baseURL: 'https://api.example.com/api/codex/backend-api/codex/v1/',
+  model: 'gpt-5.6-luna',
+  apiKey: 'test-secret-key'
+};
+
 describe('GeminiClient', () => {
   it('tests the configured model with a minimal compatible chat request', async () => {
     const request = vi.fn(async () => ({
@@ -29,6 +37,67 @@ describe('GeminiClient', () => {
         logBodyLength: 0
       })
     );
+  });
+
+  it('uses the streaming Responses API for Codex backend endpoints', async () => {
+    const request = vi.fn(async (_method: string, url: string) => {
+      if (!url.endsWith('/responses')) {
+        throw new Error(`HTTP POST ${url} failed with status code 503`);
+      }
+      return {
+        responseText: [
+          'data: {"type":"response.output_text.delta","delta":"O"}',
+          '',
+          'data: {"type":"response.output_text.delta","delta":"K"}',
+          '',
+          'data: {"type":"response.completed","response":{"output":[]}}',
+          '',
+          'data: [DONE]'
+        ].join('\n')
+      } as XMLHttpRequest;
+    });
+    const client = new GeminiClient(request);
+
+    await client.testConnection(codexResponsesConfig);
+
+    expect(request).toHaveBeenCalledOnce();
+    expect(request).toHaveBeenCalledWith(
+      'POST',
+      'https://api.example.com/api/codex/backend-api/codex/v1/responses',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Accept: 'text/event-stream' }),
+        responseType: 'text',
+        body: expect.stringContaining('"stream":true')
+      })
+    );
+  });
+
+  it('maps system and user messages to the Codex Responses request shape', async () => {
+    const request = vi.fn(async () => ({
+      responseText: [
+        'data: {"type":"response.output_text.done","text":"# 笔记"}',
+        '',
+        'data: [DONE]'
+      ].join('\n')
+    } as XMLHttpRequest));
+    const client = new GeminiClient(request);
+
+    await expect(client.generateMarkdown(codexResponsesConfig, [
+      { role: 'system', content: '只使用所给证据。' },
+      { role: 'user', content: '证据内容' }
+    ])).resolves.toBe('# 笔记');
+
+    const body = JSON.parse(String(request.mock.calls[0][2].body));
+    expect(body).toEqual({
+      model: 'gpt-5.6-luna',
+      instructions: '只使用所给证据。',
+      input: [{
+        role: 'user',
+        content: [{ type: 'input_text', text: '证据内容' }]
+      }],
+      stream: true,
+      store: false
+    });
   });
 
   it('returns Markdown from an OpenAI-compatible chat completion', async () => {
