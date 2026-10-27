@@ -134,6 +134,17 @@ async function verifyXPI() {
     }
     
     console.log('   Plugin ID: ', manifest.applications?.zotero?.id || '✗ Missing');
+
+    for (const size of [48, 96, 128]) {
+      const iconPath = manifest.icons?.[size];
+      const icon = iconPath && zip.file(iconPath);
+      if (!icon) throw new Error(`Missing ${size}px plugin icon`);
+      const bytes = await icon.async('nodebuffer');
+      if (bytes.toString('hex', 0, 8) !== '89504e470d0a1a0a'
+        || bytes.readUInt32BE(16) !== size || bytes.readUInt32BE(20) !== size) {
+        throw new Error(`Invalid ${size}px PNG icon`);
+      }
+    }
     
     const localeFiles = [
       'locale/en-US/zotero-ai-notes.properties',

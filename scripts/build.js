@@ -33,6 +33,9 @@ function cleanOldXPI() {
 function copyFiles() {
   const filesToCopy = [
     'manifest.json',
+    'icons/icon-48.png',
+    'icons/icon-96.png',
+    'icons/icon-128.png',
     'prefs.js',
     'preferences/preferences.xhtml',
     'preferences/preferences.js',

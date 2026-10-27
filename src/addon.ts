@@ -44,6 +44,7 @@ export default class Addon {
       pluginID: this.config.id,
       id: 'zotero-ai-notes-preferences',
       label: 'Zotero AI Notes',
+      image: `${this.config.rootURI}icons/icon-48.png`,
       src: 'preferences/preferences.xhtml',
       scripts: ['preferences/preferences.js'],
       stylesheets: ['preferences/preferences.css']
