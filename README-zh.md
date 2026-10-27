@@ -4,7 +4,11 @@
 
 面向 Zotero 9–10 的 AI 论文批注整理插件。它会读取用户在 PDF 中留下的高亮、评论、标签和页码，结合批注附近的原文，生成经过后台校验的 Markdown 笔记，并进一步生成可在 Zotero 内查看、可导入 XMind、可导出 OPML 的思维导图。
 
-> 当前开发测试版与最新公开测试版：`0.4.3`；支持 Zotero `9.0` 至 `10.0.*`。此前完整流程实机验证：macOS + Zotero `9.0.6`。
+> 最新公开测试版：`0.5.0`。支持 Zotero `9.0` 至 `10.0.*`。
+
+0.5.0 新增右侧“论文问答”：打开 PDF 后在右侧条目详情栏选择“询问这篇论文”。面板显示具体 PDF 标题及附件名，切换论文会切换对话。输入问题可追问，或在阅读器选中文字后点击“带入论文问答”。对话保存在本机，勾选的问答可保存为 Zotero 笔记，也会作为带有 AI 解释标识的附录加入后续生成的批注笔记。没有上级条目的 PDF 会保存为附原文链接的独立笔记。
+
+首版按问题匹配最多六页原文片段，尚未支持跨语言语义检索、扫描件或图表识别。发送前会在本机提取 PDF 文字，相关片段、问题及最近对话会发送给设置中的模型服务；不使用 MinerU。
 > Windows / Linux 使用同一套跨平台接口，仍需分别完成一次实机回归。
 
 ## 已实现功能
@@ -46,7 +50,7 @@
 
 ## macOS 安装与使用教程
 
-当前 XPI 的兼容范围为 Zotero `9.0` 至 `10.0.*`。0.4.3 修复升级 Zotero 10 后插件被判定为不兼容的问题。
+当前 XPI 的兼容范围为 Zotero `9.0` 至 `10.0.*`。0.4.2 修复升级 Zotero 10 后插件被判定为不兼容的问题。
 
 ### 1. 安装前准备
 
@@ -63,7 +67,7 @@ Zotero 版本可以从 macOS 顶部菜单“Zotero → 关于 Zotero”查看。
 
 #### 方式 A：从 GitHub Releases 下载（推荐）
 
-- [下载最新公开测试版 0.4.3](https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.4.3/zotero-ai-notes-0.4.3.xpi)
+- [下载最新公开测试版 0.5.0](https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.5.0/zotero-ai-notes-0.5.0.xpi)
 - [查看并下载全部历史版本](https://github.com/STRUGGLE1999/zotero-ai-notes/releases)
 
 下载后直接进入下一步，不要解压 XPI 文件。如果浏览器尝试打开 `.xpi`，请右键下载链接并选择“链接另存为”。
@@ -82,7 +86,7 @@ npm run build
 构建成功后，可以在项目根目录看到：
 
 ```text
-zotero-ai-notes-0.4.3.xpi
+zotero-ai-notes-0.5.0.xpi
 ```
 
 如需在安装前完整检查安装包，可继续执行：
@@ -99,7 +103,7 @@ node scripts/verify-xpi.js
 2. 点击 macOS 顶部菜单“工具 → 插件”；
 3. 在插件管理器右上角点击齿轮按钮；
 4. 选择“Install Plugin From File…”或“从文件安装插件…”；
-5. 选择从源码构建的 `zotero-ai-notes-0.4.3.xpi`，或从 Releases 下载的公开版本 XPI；
+5. 选择从源码构建的 `zotero-ai-notes-0.5.0.xpi`，或从 Releases 下载的公开版本 XPI；
 6. 在确认窗口中允许安装；
 7. 检查插件列表中是否出现对应版本的 `Zotero AI Notes`，并确认状态为启用。
 
@@ -258,7 +262,7 @@ npm run build
 构建完成后，项目根目录会生成：
 
 ```text
-zotero-ai-notes-0.4.3.xpi
+zotero-ai-notes-0.5.0.xpi
 ```
 
 当前自动验证结果：

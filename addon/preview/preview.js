@@ -649,7 +649,9 @@ var ZoteroAINotes_Preview = {
     this.valid = validation.valid;
     const messages = [];
     if (validation.valid) {
-      messages.push('内容已通过依据检查，可以写回或导出。');
+      messages.push(validation.includesReadingQuestions
+        ? '批注笔记正文已通过依据检查；阅读问答附录为用户收录的 AI 解释，请核对后保存。'
+        : '内容已通过依据检查，可以写回或导出。');
     } else {
       messages.push('内容依据检查未通过，暂不允许写回或导出。');
     }

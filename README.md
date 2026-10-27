@@ -4,7 +4,11 @@
 
 An AI-powered Zotero 9–10 plugin for organizing scholarly annotations. It reads highlights, comments, tags, and page numbers from PDFs, combines them with the surrounding source text, and generates background-validated Markdown notes. It can also create mind maps that are viewable inside Zotero, importable into XMind, and exportable as OPML.
 
-> Current development build and latest public preview: `0.4.3`; supports Zotero `9.0` through `10.0.*`. Previous full workflow verification: macOS with Zotero `9.0.6`.
+> Latest public preview: `0.5.0`. Supports Zotero `9.0` through `10.0.*`.
+
+Version 0.5.0 adds paper questions to the reader's right-hand item pane. Each PDF has its own locally saved conversation, identified by library and attachment key. Ask follow-up questions, include selected text, follow source-page citations, and choose answers to collect into Zotero notes or append to generated annotation notes. Collected answers are explicitly labeled as AI explanations. Standalone PDFs save their collected questions as standalone notes with a source link.
+
+The first version matches up to six source-page excerpts using question terms. Cross-language semantic retrieval, scanned PDFs, and figure interpretation are not yet supported. Relevant source excerpts, questions, and recent conversation are sent to the configured model provider; MinerU is not used.
 > Windows and Linux use the same cross-platform interfaces, but each platform still requires a complete hands-on regression test.
 
 ## Features
@@ -46,7 +50,7 @@ Select a Zotero item
 
 ## Installation and Usage on macOS
 
-The current XPI supports Zotero `9.0` through `10.0.*`. Version 0.4.3 fixes the incompatibility warning after upgrading to Zotero 10.
+The current XPI supports Zotero `9.0` through `10.0.*`. Version 0.4.2 fixes the incompatibility warning after upgrading to Zotero 10.
 
 ### 1. Prerequisites
 
@@ -63,7 +67,7 @@ To check the Zotero version, choose **Zotero → About Zotero** from the macOS m
 
 #### Option A: Download from GitHub Releases (recommended)
 
-- [Download the latest public preview, version 0.4.3](https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.4.3/zotero-ai-notes-0.4.3.xpi)
+- [Download the latest public preview, version 0.5.0](https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.5.0/zotero-ai-notes-0.5.0.xpi)
 - [Browse and download all previous releases](https://github.com/STRUGGLE1999/zotero-ai-notes/releases)
 
 After downloading, continue to the next step without extracting the XPI. If your browser tries to open the `.xpi` file, right-click the download link and choose **Save Link As**.
@@ -82,7 +86,7 @@ npm run build
 After a successful build, the following file will appear in the project root:
 
 ```text
-zotero-ai-notes-0.4.3.xpi
+zotero-ai-notes-0.5.0.xpi
 ```
 
 To fully verify the package before installation, run:
@@ -99,7 +103,7 @@ If the final terminal message is `XPI verification PASSED`, the manifest, lifecy
 2. Choose **Tools → Plugins** from the macOS menu bar;
 3. Click the gear button in the upper-right corner of the plugin manager;
 4. Select **Install Plugin From File…**;
-5. Choose `zotero-ai-notes-0.4.3.xpi`, either built from source or downloaded from Releases;
+5. Choose `zotero-ai-notes-0.5.0.xpi`, either built from source or downloaded from Releases;
 6. Approve the installation in the confirmation dialog;
 7. Confirm that the expected version of `Zotero AI Notes` appears in the plugin list and is enabled.
 
@@ -258,7 +262,7 @@ npm run build
 After building, the following file is generated in the project root:
 
 ```text
-zotero-ai-notes-0.4.3.xpi
+zotero-ai-notes-0.5.0.xpi
 ```
 
 Current automated validation results:

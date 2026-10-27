@@ -99,6 +99,13 @@ export class PreviewController {
         undefined,
         { checkpoint: this.checkpoint, signal: cancellationController.signal }
       );
+      const attachmentKeys = [...new Set(this.data.evidenceUnits.map(unit => unit.attachmentKey))];
+      const questions = await Zotero.ZoteroAINotes?.paperChat?.collectedMarkdown(this.data.document.libraryID, attachmentKeys) || '';
+      if (questions) {
+        result.note = { ...result.note, markdownNote: result.note.markdownNote + questions };
+        result.validation = { ...result.validation, includesReadingQuestions: true,
+          warnings: [...result.validation.warnings, '附录包含用户收录的阅读问答，仅正文通过批注依据检查；问答为 AI 辅助解释，请结合原文核对。'] };
+      }
       this.lastMarkdown = result.note.markdownNote;
       this.generationComplete = true;
       return result;
@@ -133,7 +140,12 @@ export class PreviewController {
   }
 
   async validateEdited(markdown: string) {
-    const result = await auditEditedMarkdown(this.config, this.data, markdown);
+    const appendix = markdown.indexOf('\n\n## 阅读问答（用户收录 · AI 辅助解释）');
+    const result = await auditEditedMarkdown(this.config, this.data, appendix >= 0 ? markdown.slice(0, appendix) : markdown);
+    if (appendix >= 0) {
+      result.validation.includesReadingQuestions = true;
+      result.validation.warnings.push('仅正文通过批注依据检查；阅读问答附录为 AI 辅助解释，修改后请自行核对。');
+    }
     this.lastMarkdown = markdown;
     return result.validation;
   }

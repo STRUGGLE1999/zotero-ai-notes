@@ -1,6 +1,8 @@
 import ContextMenu from './zotero/context-menu';
 import { SettingsService } from './config/settings';
 import { GeminiClient } from './llm/gemini-client';
+import { createPaperChat, type PaperChat } from './chat/paper-chat';
+import { ReaderChatPanel } from './chat/reader-panel';
 
 declare const Zotero: any;
 declare const Services: any;
@@ -18,6 +20,8 @@ export default class Addon {
   private windowListeners: any[] = [];
   private preferencePaneID: string | null = null;
   private settings = new SettingsService();
+  private paperChat: PaperChat | null = null;
+  private readerPanel: ReaderChatPanel | null = null;
 
   constructor(config: AddonConfig) {
     this.config = config;
@@ -27,7 +31,11 @@ export default class Addon {
     Zotero.debug(`Zotero AI Notes: starting up (reason: ${reason})`, 5);
 
     this.contextMenu = new ContextMenu(this.config.rootURI, this.settings, this.config.version);
+    this.paperChat = createPaperChat(this.settings);
+    this.readerPanel = new ReaderChatPanel(this.paperChat, this.config.id, this.config.rootURI);
+    this.readerPanel.register();
     Zotero.ZoteroAINotes = {
+      paperChat: this.paperChat,
       settings: {
         getPublicSettings: () => this.settings.getPublicSettings(),
         save: (update: { provider: string; baseURL: string; model: string; apiKey?: string }) =>
@@ -63,6 +71,8 @@ export default class Addon {
     Zotero.debug(`Zotero AI Notes: shutting down (reason: ${reason})`, 5);
 
     this.unregisterWindowListener();
+    this.readerPanel?.destroy();
+    this.readerPanel = null;
 
     if (reason === Zotero.APP_SHUTDOWN) {
       return;

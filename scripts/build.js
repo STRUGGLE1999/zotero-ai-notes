@@ -34,6 +34,8 @@ function copyFiles() {
   const filesToCopy = [
     'manifest.json',
     'icons/icon-48.png',
+    'icons/icon-16.png',
+    'icons/icon-20.png',
     'icons/icon-96.png',
     'icons/icon-128.png',
     'prefs.js',
@@ -46,6 +48,8 @@ function copyFiles() {
     'preview/render-frame.xhtml',
     'preview/render-frame.js',
     'locale/en-US/zotero-ai-notes.properties',
+    'locale/en-US/ai-notes-paper-chat.ftl',
+    'locale/zh-CN/ai-notes-paper-chat.ftl',
     'locale/zh-CN/zotero-ai-notes.properties'
   ];
 

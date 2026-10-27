@@ -208,16 +208,19 @@ async function verifyXPI() {
       process.exit(1);
     }
 
-    const update = JSON.parse(fs.readFileSync(path.join(rootDir, 'updates.json'), 'utf8'))
-      .addons[pluginId]?.updates?.find(entry => entry.version === packageVersion);
+    const updates = JSON.parse(fs.readFileSync(path.join(rootDir, 'updates.json'), 'utf8'))
+      .addons[pluginId]?.updates;
+    const update = updates?.find(entry => entry.version === packageVersion);
     const lock = JSON.parse(fs.readFileSync(path.join(rootDir, 'package-lock.json'), 'utf8'));
     if (manifest.version !== packageVersion || lock.version !== packageVersion
-      || lock.packages[''].version !== packageVersion || !update
-      || update.update_hash !== `sha256:${getFileHash(xpiPath)}`
+      || lock.packages[''].version !== packageVersion
+      || (!update && (!updates?.length || updates.some(entry => compareVersions(entry.version, packageVersion) >= 0)))
+      || (update && (update.update_hash !== `sha256:${getFileHash(xpiPath)}`
       || update.applications?.zotero?.strict_min_version !== minVersion
-      || update.applications?.zotero?.strict_max_version !== maxVersion) {
+      || update.applications?.zotero?.strict_max_version !== maxVersion))) {
       throw new Error('Release versions, compatibility ranges, or XPI SHA-256 do not match');
     }
+    if (!update) console.log('   Local preview: public updates.json remains on the previous published version.');
     if (compareVersions('9.0.6', minVersion) < 0 || compareVersions('9.0.6', maxVersion.replace('.*', '.999999')) > 0) {
       throw new Error('Zotero 9.0.6 must remain compatible');
     }

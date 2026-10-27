@@ -94,6 +94,7 @@ export interface ReviewResult {
 
 export interface ValidationResult {
   valid: boolean;
+  includesReadingQuestions?: boolean;
   warnings: string[];
   errors: string[];
   review: ReviewResult;
