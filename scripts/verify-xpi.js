@@ -184,7 +184,7 @@ async function verifyXPI() {
     const maxVersion = manifest.applications?.zotero?.strict_max_version;
     const pluginId = manifest.applications?.zotero?.id;
     const updateUrl = manifest.applications?.zotero?.update_url;
-    const targetVersion = '9.0.6';
+    const targetVersion = '10.0.6';
     
     console.log(`   Target Zotero Version: ${targetVersion}`);
     console.log(`   strict_min_version:    ${minVersion || '✗ Missing'}`);
@@ -197,6 +197,20 @@ async function verifyXPI() {
       process.exit(1);
     }
 
+    const update = JSON.parse(fs.readFileSync(path.join(rootDir, 'updates.json'), 'utf8'))
+      .addons[pluginId]?.updates?.find(entry => entry.version === packageVersion);
+    const lock = JSON.parse(fs.readFileSync(path.join(rootDir, 'package-lock.json'), 'utf8'));
+    if (manifest.version !== packageVersion || lock.version !== packageVersion
+      || lock.packages[''].version !== packageVersion || !update
+      || update.update_hash !== `sha256:${getFileHash(xpiPath)}`
+      || update.applications?.zotero?.strict_min_version !== minVersion
+      || update.applications?.zotero?.strict_max_version !== maxVersion) {
+      throw new Error('Release versions, compatibility ranges, or XPI SHA-256 do not match');
+    }
+    if (compareVersions('9.0.6', minVersion) < 0 || compareVersions('9.0.6', maxVersion.replace('.*', '.999999')) > 0) {
+      throw new Error('Zotero 9.0.6 must remain compatible');
+    }
+
     try {
       new URL(updateUrl);
     } catch (_error) {
@@ -206,15 +220,14 @@ async function verifyXPI() {
     
     const matchesMin = compareVersions(targetVersion, minVersion) >= 0;
     const matchesMax = maxVersion.includes('*') 
-      ? compareVersions(targetVersion, maxVersion.replace('.*', '.0')) >= 0 && 
-        targetVersion.startsWith(maxVersion.replace('.*', ''))
+      ? compareVersions(targetVersion, maxVersion.replace('.*', '.999999')) <= 0
       : compareVersions(targetVersion, maxVersion) <= 0;
     
     console.log(`   Version ${targetVersion} matches min (${minVersion}): ${matchesMin ? '✓' : '✗'}`);
     console.log(`   Version ${targetVersion} matches max (${maxVersion}): ${matchesMax ? '✓' : '✗'}`);
     
     if (matchesMin && matchesMax) {
-      console.log('\n✅ XPI verification PASSED - Compatible with Zotero 9.0.6');
+      console.log(`\n✅ XPI verification PASSED - Compatible with Zotero ${targetVersion}`);
     } else {
       console.error('\n❌ XPI verification FAILED - Version compatibility issue');
       process.exit(1);

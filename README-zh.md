@@ -2,9 +2,9 @@
 
 [English](README.md) | **简体中文**
 
-面向 Zotero 9 的 AI 论文批注整理插件。它会读取用户在 PDF 中留下的高亮、评论、标签和页码，结合批注附近的原文，生成经过后台校验的 Markdown 笔记，并进一步生成可在 Zotero 内查看、可导入 XMind、可导出 OPML 的思维导图。
+面向 Zotero 9–10 的 AI 论文批注整理插件。它会读取用户在 PDF 中留下的高亮、评论、标签和页码，结合批注附近的原文，生成经过后台校验的 Markdown 笔记，并进一步生成可在 Zotero 内查看、可导入 XMind、可导出 OPML 的思维导图。
 
-> 当前开发测试版与最新公开测试版：`0.4.1`；已实机验证：macOS + Zotero `9.0.6`。
+> 当前开发测试版与最新公开测试版：`0.4.2`；支持 Zotero `9.0` 至 `10.0.*`。此前完整流程实机验证：macOS + Zotero `9.0.6`。
 > Windows / Linux 使用同一套跨平台接口，仍需分别完成一次实机回归。
 
 ## 已实现功能
@@ -46,7 +46,7 @@
 
 ## macOS 安装与使用教程
 
-以下步骤面向当前已经实机验证的环境：macOS + Zotero `9.0.6`。当前 XPI 的兼容范围为 Zotero `9.0` 至 `9.0.*`。
+当前 XPI 的兼容范围为 Zotero `9.0` 至 `10.0.*`。0.4.2 修复升级 Zotero 10 后插件被判定为不兼容的问题。
 
 ### 1. 安装前准备
 
@@ -63,7 +63,7 @@ Zotero 版本可以从 macOS 顶部菜单“Zotero → 关于 Zotero”查看。
 
 #### 方式 A：从 GitHub Releases 下载（推荐）
 
-- [下载最新公开测试版 0.4.1](https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.4.1/zotero-ai-notes-0.4.1.xpi)
+- [下载最新公开测试版 0.4.2](https://github.com/STRUGGLE1999/zotero-ai-notes/releases/download/v0.4.2/zotero-ai-notes-0.4.2.xpi)
 - [查看并下载全部历史版本](https://github.com/STRUGGLE1999/zotero-ai-notes/releases)
 
 下载后直接进入下一步，不要解压 XPI 文件。如果浏览器尝试打开 `.xpi`，请右键下载链接并选择“链接另存为”。
@@ -82,7 +82,7 @@ npm run build
 构建成功后，可以在项目根目录看到：
 
 ```text
-zotero-ai-notes-0.4.1.xpi
+zotero-ai-notes-0.4.2.xpi
 ```
 
 如需在安装前完整检查安装包，可继续执行：
@@ -91,7 +91,7 @@ zotero-ai-notes-0.4.1.xpi
 node scripts/verify-xpi.js
 ```
 
-终端最后显示 `XPI verification PASSED`，表示清单、生命周期函数、目录结构和 Zotero 9.0.6 兼容范围检查通过。
+终端最后显示 `XPI verification PASSED`，表示清单、生命周期函数、目录结构、Zotero 9/10 兼容范围、发布版本和安装包校验和检查通过。
 
 ### 3. 在 Zotero 中安装插件
 
@@ -99,7 +99,7 @@ node scripts/verify-xpi.js
 2. 点击 macOS 顶部菜单“工具 → 插件”；
 3. 在插件管理器右上角点击齿轮按钮；
 4. 选择“Install Plugin From File…”或“从文件安装插件…”；
-5. 选择从源码构建的 `zotero-ai-notes-0.4.1.xpi`，或从 Releases 下载的公开版本 XPI；
+5. 选择从源码构建的 `zotero-ai-notes-0.4.2.xpi`，或从 Releases 下载的公开版本 XPI；
 6. 在确认窗口中允许安装；
 7. 检查插件列表中是否出现对应版本的 `Zotero AI Notes`，并确认状态为启用。
 
@@ -194,7 +194,7 @@ API Key 只保存在本机 Zotero/Firefox Login Manager 中。设置页不会回
 
 #### 安装时显示“无法安装插件”
 
-- 确认 Zotero 是 9.0.x；
+- 确认 Zotero 是 9.0.x 或 10.0.x；
 - 确认选择的是 `.xpi` 文件，而不是解压后的目录；
 - 重新执行 `npm run build` 和 `node scripts/verify-xpi.js`；
 - 打开“工具 → 开发者 → Error Console”，重新安装并查看最新红色错误。
@@ -258,7 +258,7 @@ npm run build
 构建完成后，项目根目录会生成：
 
 ```text
-zotero-ai-notes-0.4.1.xpi
+zotero-ai-notes-0.4.2.xpi
 ```
 
 当前自动验证结果：

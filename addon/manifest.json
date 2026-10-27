@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Zotero AI Notes",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "根据用户在 Zotero PDF 阅读过程中的高亮和批注，结合文献原文，自动整理为可靠、自然的 Markdown 笔记和思维导图",
   "homepage_url": "https://github.com/STRUGGLE1999/zotero-ai-notes",
   "author": "zotero-ai-notes contributors",
@@ -10,7 +10,7 @@
       "id": "zotero-ai-notes@example.com",
       "update_url": "https://raw.githubusercontent.com/STRUGGLE1999/zotero-ai-notes/main/updates.json",
       "strict_min_version": "9.0",
-      "strict_max_version": "9.0.*"
+      "strict_max_version": "10.0.*"
     }
   }
 }
